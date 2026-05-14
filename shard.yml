@@ -1,0 +1,23 @@
+name: amqp
+version: 0.0.1
+
+authors:
+  - Sergey Kuznetsov <sergey@rigelstar.com>
+
+description: |
+  Clean-design AMQP 0-9-1 client for Crystal: publisher confirms, TLS,
+  topology recovery, heartbeats. Native fibers + Channel(T). AMQP 1.0
+  architectural slot reserved (v1, deferred).
+
+  Spec-driven: every public guarantee in docs/ maps to a falsifier test.
+
+crystal: ">= 1.10.0"
+
+license: MIT
+
+# v0 is stdlib-only on purpose: no transitive dependencies, no surface
+# area to break on Crystal stdlib drift. TLS via OpenSSL::SSL, fibers
+# via stdlib, IO via stdlib.
+dependencies: {}
+
+development_dependencies: {}

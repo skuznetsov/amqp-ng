@@ -1,0 +1,10 @@
+/lib/
+/bin/
+/.shards/
+/.crystal/
+shard.lock
+
+*.dwarf
+*.dSYM/
+
+.DS_Store
