@@ -1,0 +1,6 @@
+scenario: exchange_declare
+captured_at: 2026-05-14T17:38:48Z
+duration_ms: 304
+c2s_bytes: 542
+s2c_bytes: 619
+upstream: 127.0.0.1:5672

@@ -1,0 +1,6 @@
+scenario: handshake_auth_fail
+captured_at: 2026-05-14T17:38:49Z
+duration_ms: 273
+c2s_bytes: 345
+s2c_bytes: 649
+upstream: 127.0.0.1:5672

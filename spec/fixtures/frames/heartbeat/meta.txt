@@ -1,0 +1,6 @@
+scenario: heartbeat
+captured_at: 2026-05-14T17:38:55Z
+duration_ms: 5317
+c2s_bytes: 446
+s2c_bytes: 607
+upstream: 127.0.0.1:5672

@@ -1,0 +1,6 @@
+scenario: basic_get
+captured_at: 2026-05-14T17:38:47Z
+duration_ms: 283
+c2s_bytes: 702
+s2c_bytes: 764
+upstream: 127.0.0.1:5672

@@ -1,0 +1,6 @@
+scenario: basic_qos
+captured_at: 2026-05-14T17:38:47Z
+duration_ms: 304
+c2s_bytes: 472
+s2c_bytes: 607
+upstream: 127.0.0.1:5672

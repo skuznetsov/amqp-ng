@@ -1,0 +1,6 @@
+scenario: queue_declare
+captured_at: 2026-05-14T17:38:57Z
+duration_ms: 283
+c2s_bytes: 545
+s2c_bytes: 660
+upstream: 127.0.0.1:5672

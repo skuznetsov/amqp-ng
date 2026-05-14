@@ -1,0 +1,6 @@
+READY
+re] scenario=handshake_auth_fail listening 127.0.0.1:5673 -> 127.0.0.1:5672
+[capture] client connected, upstream open
+[capture] half-closed: c2s; draining...
+[capture] s2c ended: Closed stream
+[capture] done c2s=345 s2c=649 -> /Users/sergey/Projects/Crystal/amqp-ng/spec/fixtures/frames/handshake_auth_fail

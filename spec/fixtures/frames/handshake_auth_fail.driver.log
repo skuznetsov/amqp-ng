@@ -1,0 +1,1 @@
+[driver] got auth failure (probable): ConnectionClosedByBroker: (403) 'ACCESS_REFUSED - Login was refused using authentication mechanism PLAIN. For details see the broker logfile.'

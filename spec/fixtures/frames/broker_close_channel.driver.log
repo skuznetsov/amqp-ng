@@ -1,0 +1,1 @@
+[driver] got ChannelClosedByBroker: 404 NOT_FOUND - no queue 'amqp-ng.corpus.does-not-exist' in vhost '/'

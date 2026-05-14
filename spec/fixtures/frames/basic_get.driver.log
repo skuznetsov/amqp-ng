@@ -1,0 +1,2 @@
+[driver] first get: method=None
+[driver] second get: method=<Basic.GetOk(['delivery_tag=1', 'exchange=', 'message_count=0', 'redelivered=False', 'routing_key=amqp-ng.corpus.basic-get'])> body=b'polled-payload'

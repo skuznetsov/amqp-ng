@@ -1,0 +1,6 @@
+scenario: publish_confirm
+captured_at: 2026-05-14T17:38:56Z
+duration_ms: 281
+c2s_bytes: 811
+s2c_bytes: 737
+upstream: 127.0.0.1:5672

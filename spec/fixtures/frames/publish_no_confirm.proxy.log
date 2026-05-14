@@ -1,0 +1,6 @@
+READY
+re] scenario=publish_no_confirm listening 127.0.0.1:5673 -> 127.0.0.1:5672
+[capture] client connected, upstream open
+[capture] half-closed: c2s; draining...
+[capture] s2c ended: Closed stream
+[capture] done c2s=648 s2c=665 -> /Users/sergey/Projects/Crystal/amqp-ng/spec/fixtures/frames/publish_no_confirm

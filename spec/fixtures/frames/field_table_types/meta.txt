@@ -1,0 +1,6 @@
+scenario: field_table_types
+captured_at: 2026-05-14T17:38:49Z
+duration_ms: 284
+c2s_bytes: 718
+s2c_bytes: 664
+upstream: 127.0.0.1:5672

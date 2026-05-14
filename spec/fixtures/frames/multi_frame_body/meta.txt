@@ -1,0 +1,6 @@
+scenario: multi_frame_body
+captured_at: 2026-05-14T17:38:55Z
+duration_ms: 278
+c2s_bytes: 12941
+s2c_bytes: 663
+upstream: 127.0.0.1:5672

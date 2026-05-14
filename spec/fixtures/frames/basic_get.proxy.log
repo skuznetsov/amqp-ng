@@ -1,0 +1,6 @@
+READY
+re] scenario=basic_get listening 127.0.0.1:5673 -> 127.0.0.1:5672
+[capture] client connected, upstream open
+[capture] half-closed: c2s; draining...
+[capture] s2c ended: Closed stream
+[capture] done c2s=702 s2c=764 -> /Users/sergey/Projects/Crystal/amqp-ng/spec/fixtures/frames/basic_get

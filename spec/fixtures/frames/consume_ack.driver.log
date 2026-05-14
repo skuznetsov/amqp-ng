@@ -1,0 +1,3 @@
+[driver] published 1
+[driver] delivered tag=1 body=b'consume-me'
+[driver] received 1 messages

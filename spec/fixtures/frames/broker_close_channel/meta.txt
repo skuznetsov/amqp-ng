@@ -1,0 +1,6 @@
+scenario: broker_close_channel
+captured_at: 2026-05-14T17:38:47Z
+duration_ms: 306
+c2s_bytes: 480
+s2c_bytes: 667
+upstream: 127.0.0.1:5672

@@ -1,0 +1,6 @@
+READY
+re] scenario=broker_close_channel listening 127.0.0.1:5673 -> 127.0.0.1:5672
+[capture] client connected, upstream open
+[capture] half-closed: c2s; draining...
+[capture] s2c ended: Closed stream
+[capture] done c2s=480 s2c=667 -> /Users/sergey/Projects/Crystal/amqp-ng/spec/fixtures/frames/broker_close_channel

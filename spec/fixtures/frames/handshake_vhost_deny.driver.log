@@ -1,0 +1,1 @@
+[driver] got connection error: ConnectionClosedByBroker: (530) 'NOT_ALLOWED - vhost /does-not-exist not found'
