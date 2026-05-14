@@ -7,4 +7,10 @@ shard.lock
 *.dwarf
 *.dSYM/
 
+# Compiled capture_proxy binary (built from tools/capture_proxy.cr)
+/tools/capture_proxy
+
 .DS_Store
+
+__pycache__/
+*.pyc
