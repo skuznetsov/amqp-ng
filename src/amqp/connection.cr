@@ -1,6 +1,9 @@
+require "log"
 require "socket"
+require "openssl"
 require "./error"
 require "./config"
+require "./stats"
 require "./arguments"
 require "./properties"
 require "./wire/protocol_header"
@@ -18,6 +21,8 @@ module Amqp
   VERSION = "0.1.0"
 
   class Connection
+    Log = ::Log.for("amqp.connection")
+
     enum State
       Initial
       Connecting
@@ -54,6 +59,7 @@ module Amqp
     @heartbeat_stop : ::Channel(Nil)
     @last_write_ns : Atomic(Int64)
     @close_reason : Exception?
+    getter stats : Stats
 
     private def initialize(@config : Config)
       @state = State::Initial
@@ -71,6 +77,7 @@ module Amqp
       @heartbeat_stop = ::Channel(Nil).new
       @last_write_ns = Atomic(Int64).new(0_i64)
       @close_reason = nil
+      @stats = Stats.new
     end
 
     private def monotonic_ns : Int64
@@ -88,9 +95,6 @@ module Amqp
     end
 
     protected def start : Nil
-      if @config.tls?
-        raise TlsConfigError.new("amqps:// is not supported in slice 1")
-      end
       begin
         establish_session
       rescue ex
@@ -100,6 +104,7 @@ module Amqp
       end
       @state = State::Open
       start_session_fibers
+      Log.info { "connection open #{@config.scheme}://#{@config.host}:#{@config.port}#{@config.vhost} (heartbeat=#{@heartbeat}s, channel_max=#{@channel_max}, frame_max=#{@frame_max})" }
     end
 
     # Open TCP socket and run the AMQP handshake. Sets @socket / @io and
@@ -122,14 +127,35 @@ module Amqp
       sock.read_buffering = true
       sock.tcp_nodelay = true
       @socket = sock
-      @io = sock
+
+      io : IO = sock
+      if @config.tls?
+        begin
+          ctx = @config.tls_context || default_tls_context
+          io = OpenSSL::SSL::Socket::Client.new(sock, context: ctx,
+            sync_close: true, hostname: @config.host)
+        rescue ex : OpenSSL::SSL::Error
+          begin
+            sock.close
+          rescue
+          end
+          raise TlsHandshakeError.new("TLS handshake to #{@config.host}:#{@config.port} failed: #{ex.message}", ex)
+        rescue ex : IO::Error | Socket::Error
+          begin
+            sock.close
+          rescue
+          end
+          raise SocketError.new("socket error during TLS handshake: #{ex.message}", ex)
+        end
+      end
+      @io = io
 
       @state = State::Negotiating
       begin
-        perform_handshake(sock)
+        perform_handshake(io)
       rescue ex
         begin
-          sock.close
+          io.close
         rescue
         end
         raise ex
@@ -139,6 +165,10 @@ module Amqp
         sock.read_timeout = (@heartbeat.to_i * 2).seconds
       end
       stamp_write
+    end
+
+    private def default_tls_context : OpenSSL::SSL::Context::Client
+      OpenSSL::SSL::Context::Client.new
     end
 
     private def start_session_fibers : Nil
@@ -493,6 +523,8 @@ module Amqp
     # shutdown_with so callers see the final error.
     private def attempt_recovery(reason : Exception) : Nil
       @state = State::Recovering
+      @stats.incr_recoveries_attempted
+      Log.warn { "recovery starting (reason: #{reason.class}: #{reason.message})" }
       stop_heartbeat
 
       channels = @channels_mutex.synchronize { @channels.values.dup }
@@ -518,11 +550,14 @@ module Amqp
         begin
           establish_session
           established = true
+          Log.info { "recovery handshake ok on attempt #{attempt}" }
           break
         rescue ex : AuthenticationError | VhostAccessError | TlsConfigError | TlsHandshakeError | ProtocolNegotiationError | ConnectionClosedByBroker
+          Log.error { "recovery aborted (non-retryable #{ex.class}): #{ex.message}" }
           last_error = ex
           break
         rescue ex
+          Log.warn { "recovery attempt #{attempt}/#{max_attempts} failed (#{ex.class}): #{ex.message}" }
           last_error = ex
           if attempt >= max_attempts
             break
@@ -533,6 +568,8 @@ module Amqp
       end
 
       unless established
+        @stats.incr_recoveries_failed
+        Log.error { "recovery exhausted after #{attempt} attempts" }
         shutdown_with(RecoveryExhaustedError.new(
           "recovery failed after #{attempt} attempt(s): #{last_error.message}", last_error
         ))
@@ -544,6 +581,8 @@ module Amqp
       begin
         channels.each(&.replay_topology)
       rescue ex
+        @stats.incr_recoveries_failed
+        Log.error { "topology replay failed: #{ex.class}: #{ex.message}" }
         shutdown_with(RecoveryExhaustedError.new(
           "topology replay failed: #{ex.message}", ex
         ))
@@ -551,6 +590,8 @@ module Amqp
       end
 
       @state = State::Open
+      @stats.incr_recoveries_succeeded
+      Log.info { "recovery complete (replayed #{channels.size} channel(s))" }
     end
 
     private def shutdown_with(reason : Exception) : Nil

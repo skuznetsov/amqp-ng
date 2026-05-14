@@ -1,3 +1,4 @@
+require "log"
 require "./error"
 require "./arguments"
 require "./properties"
@@ -14,6 +15,7 @@ require "./wire/amqp_zero_nine_one/content_header"
 
 module Amqp
   class Channel
+    Log = ::Log.for("amqp.channel")
     enum State
       Initial
       Open
@@ -310,6 +312,7 @@ module Amqp
       ensure
         @confirms_mutex.unlock if @confirms_enabled
       end
+      @connection.stats.incr_published
       seq
     end
 
@@ -663,8 +666,11 @@ module Amqp
         )
         sub = @consumers_mutex.synchronize { @consumers[method.consumer_tag]? }
         sub.try &.deliver(delivery)
+        @connection.stats.incr_consumed
       in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return
-        # Slice 2: drop returned messages on the floor (full surface in slice 3).
+        # Mandatory-publish unroutable messages: stats only for now;
+        # caller-visible return handling lives in a later slice.
+        @connection.stats.incr_returned
       in Nil
         # nothing
       end
@@ -689,14 +695,25 @@ module Amqp
     # `tag` (multiple=true). Sets nack-flag if any settled seq was negative,
     # then wakes any wait_for_confirms waiters.
     private def settle_publish(tag : UInt64, multiple : Bool, nacked : Bool) : Nil
+      settled = 0
       @confirms_mutex.synchronize do
         if multiple
+          before = @unconfirmed.size
           @unconfirmed.reject! { |s| s <= tag }
+          settled = before - @unconfirmed.size
         else
-          @unconfirmed.delete(tag)
+          settled = @unconfirmed.delete(tag) ? 1 : 0
         end
         @confirms_nacked = true if nacked
         wake_confirms_locked
+      end
+      if settled > 0
+        delta = settled.to_i64
+        if nacked
+          @connection.stats.incr_confirmed_nack(delta)
+        else
+          @connection.stats.incr_confirmed_ack(delta)
+        end
       end
     end
 

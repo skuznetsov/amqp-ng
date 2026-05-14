@@ -1,4 +1,5 @@
 require "uri"
+require "openssl"
 require "./error"
 
 module Amqp
@@ -19,6 +20,7 @@ module Amqp
     getter recovery_max_attempts : Int32
     getter recovery_initial_delay : Time::Span
     getter recovery_max_delay : Time::Span
+    getter tls_context : OpenSSL::SSL::Context::Client?
 
     def initialize(@scheme, @host, @port, @user, @password, @vhost,
                    @heartbeat, @channel_max, @frame_max, @connect_timeout,
@@ -26,7 +28,11 @@ module Amqp
                    @recovery = false,
                    @recovery_max_attempts = 5,
                    @recovery_initial_delay = 500.milliseconds,
-                   @recovery_max_delay = 10.seconds)
+                   @recovery_max_delay = 10.seconds,
+                   @tls_context : OpenSSL::SSL::Context::Client? = nil)
+      if @tls_context && @scheme != "amqps"
+        raise TlsConfigError.new("tls_context provided but scheme is '#{@scheme}', expected 'amqps'")
+      end
     end
 
     def tls? : Bool
@@ -47,7 +53,8 @@ module Amqp
                    recovery : Bool? = nil,
                    recovery_max_attempts : Int32? = nil,
                    recovery_initial_delay : Time::Span? = nil,
-                   recovery_max_delay : Time::Span? = nil) : Config
+                   recovery_max_delay : Time::Span? = nil,
+                   tls_context : OpenSSL::SSL::Context::Client? = nil) : Config
       uri = begin
         URI.parse(uri_str)
       rescue ex : URI::Error
@@ -84,6 +91,7 @@ module Amqp
         recovery_max_attempts: recovery_max_attempts || 5,
         recovery_initial_delay: recovery_initial_delay || 500.milliseconds,
         recovery_max_delay: recovery_max_delay || 10.seconds,
+        tls_context: tls_context,
       )
     end
 

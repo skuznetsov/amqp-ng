@@ -1,9 +1,13 @@
 require "./spec_helper"
 
 describe Amqp::Connection do
-  it "rejects amqps:// in slice 1" do
-    expect_raises(Amqp::TlsConfigError) do
-      Amqp.connect("amqps://guest:guest@127.0.0.1:5671/")
+  it "attempts TLS handshake when scheme is amqps://" do
+    # Plain-AMQP broker on 5672 will close the TLS handshake, so we
+    # expect either a TLS-level error or a generic socket error
+    # depending on how the broker drops the bytes.
+    expect_raises(Amqp::ConnectError) do
+      Amqp.connect("amqps://guest:guest@127.0.0.1:5672/",
+        connect_timeout: 1.second)
     end
   end
 
