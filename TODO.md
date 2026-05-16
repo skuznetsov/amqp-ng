@@ -11,13 +11,13 @@ Status: active working ledger for `amqp-ng`.
 
 ## Current Slice: Bring API And Specs Into Alignment
 
-- [x] Cut pragmatic v0.1.0 release for `../job_hunter`.
+- [x] Cut pragmatic v0.1.0 release for a private downstream service.
   - Risk tier: CAUTION, because this changes release surface and a sibling project's dependency.
   - DoD: `shard.yml` version is `0.1.0`; `Amqp::VERSION` remains `0.1.0`; release docs list current evidence and deferred surfaces.
-  - DoD: `../job_hunter` depends on local `../amqp-ng` and compiles its CLI entrypoint.
+  - DoD: a private downstream service depends on local `../amqp-ng` and compiles its CLI entrypoint.
   - Evidence: `shard.yml`, `src/amqp.cr`, `CHANGELOG.md`, and `docs/17-mvp-cutline.md`.
-  - Evidence: `cd ../job_hunter && shards install` installs `amqp (0.1.0 at ../amqp-ng)`.
-  - Evidence: `cd ../job_hunter && crystal build src/cli.cr --no-codegen --error-trace` exits 0.
+  - Evidence: downstream service `shards install` installs `amqp (0.1.0 at ../amqp-ng)`.
+  - Evidence: downstream service CLI compile smoke exits 0.
   - Evidence: current default `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: RabbitMQ opt-in TLS/backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: LavinMQ 2.4.0 opt-in backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
@@ -152,11 +152,11 @@ Status: active working ledger for `amqp-ng`.
   - Progress: added `IO` + explicit byte-size publish overloads for `Channel#basic_publish`, `Channel#basic_publish_confirm`, and `Queue#publish`/`#publish_confirm`.
   - Evidence: `crystal spec spec/api_surface_spec.cr spec/channel_spec.cr --error-trace` exits 0: 26 examples, 0 failures.
   - Work-pool audit: old `amqp-client.cr` exposes `work_pool` through `basic_consume` and `Queue#subscribe`; both are covered by current wrappers.
-  - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local `job_hunter` release.
+  - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local downstream release.
   - Lower-priority compatibility niceties: `no_wait` overloads and NamedTuple `args` overloads are still omitted from the v0 practical surface unless a real migration site needs them.
   - Evidence: latest full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `crystal tool format --check src spec tools/perf_publish.cr`, `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and `git diff --check` exit 0.
-  - Evidence: `cd ../job_hunter && crystal build src/cli.cr --no-codegen --error-trace` exits 0 after the parity additions.
+  - Evidence: private downstream service compile smoke exits 0 after the parity additions.
   - Cutline: implement aliases/wrappers/callbacks before niche protocol features; any future WebSocket transport needs explicit docs/spec updates because v0 docs currently defer or omit it.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.

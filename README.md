@@ -1,7 +1,7 @@
 # amqp
 
 AMQP 0-9-1 client for Crystal, written for RabbitMQ/LavinMQ and for
-the local `../job_hunter` service. The project is no longer
+real worker-service integration. The project is no longer
 pre-implementation: it has a working client under `src/`, executable
 specs under `spec/`, a local benchmark harness, and a v0.1.0 release
 branch.
@@ -211,7 +211,6 @@ Additional gates used for this branch:
 crystal tool format --check src spec tools/perf_publish.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
 git diff --check
-cd ../job_hunter && crystal build src/cli.cr --no-codegen --error-trace
 ```
 
 The four default pending specs are live/environment gated:

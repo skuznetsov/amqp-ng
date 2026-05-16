@@ -2,7 +2,7 @@
 
 ## 0.1.0 - 2026-05-15
 
-First usable AMQP 0-9-1 release for local `job_hunter` integration.
+First usable AMQP 0-9-1 release for local downstream-service integration.
 
 ### Included
 
@@ -27,7 +27,7 @@ First usable AMQP 0-9-1 release for local `job_hunter` integration.
 - `crystal tool format --check src spec tools/perf_publish.cr`.
 - `crystal build tools/perf_publish.cr --no-codegen --error-trace`.
 - `git diff --check`.
-- `../job_hunter`: `crystal build src/cli.cr --no-codegen --error-trace`.
+- Downstream service compile smoke passed locally.
 - RabbitMQ 3.13.7 opt-in TLS/backpressure/chaos suite: 150 examples,
   0 failures, 0 errors, 0 pending.
 - LavinMQ 2.4.0 default suite: 150 examples, 0 failures, 0 errors,

@@ -304,13 +304,14 @@ v0. v0.x exposes the limits.
 
 ---
 
-## 14. RISK-14: Crystal version split (job_hunter context)
+## 14. RISK-14: Crystal version split in downstream deployments
 
 **Description.** Outside this shard, the author's primary project
-(`job_hunter`) runs on Crystal 1.20.0-dev locally and 1.10.1 in CI.
-The shard's `crystal: ">= 1.10.0"` floor accommodates both. A future
-stdlib change between 1.10 and 1.20 that breaks the shard would
-break both environments.
+uses a newer local Crystal than the older floor version used in some
+CI/deployment contexts. The shard's `crystal: ">= 1.10.0"` floor is
+intended to accommodate both. A future stdlib change between 1.10 and
+current Crystal that breaks the shard would break one of those
+environments.
 
 **Mitigation.** CI runs the shard against the floor (1.10.x) AND
 the latest stable. Falsifier `T-API-DEPS-001` ensures no transitive

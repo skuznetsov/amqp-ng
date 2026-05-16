@@ -258,7 +258,8 @@ The shard ships v0.1.0 when these pragmatic release checks pass:
 6. `crystal tool format --check src spec` passes.
 7. `spec/docs_falsifier_link_spec.cr` passes, so new normative prose
    cannot increase the old documentation debt.
-8. `../job_hunter` can compile against the local path dependency.
+8. A private downstream service can compile against the local path
+   dependency.
 
 The stricter "every historical matrix row has executable evidence",
 `spec/perf/`, `spec/reliability/`, and LavinMQ corpus requirements are
