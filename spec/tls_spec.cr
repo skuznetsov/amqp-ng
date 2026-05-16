@@ -24,8 +24,13 @@ describe "Amqp TLS" do
     it "completes handshake against a TLS broker" do
       url = ENV["AMQP_TLS_URL"]?
       pending! "AMQP_TLS_URL not set" unless url
+      tls_context = if ca_cert = ENV["AMQP_TLS_CA_CERT"]?
+                      ctx = Amqp.tls_context_default
+                      ctx.ca_certificates = ca_cert
+                      ctx
+                    end
 
-      Amqp.connect(url) do |conn|
+      Amqp.connect(url, tls_context: tls_context) do |conn|
         conn.closed?.should be_false
         ch = conn.open_channel
         info = ch.queue_declare(exclusive: true)

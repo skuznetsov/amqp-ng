@@ -24,7 +24,7 @@ module Amqp
     end
 
     {% for name in %w(published confirmed_ack confirmed_nack returned consumed
-                      recoveries_attempted recoveries_succeeded recoveries_failed) %}
+                     recoveries_attempted recoveries_succeeded recoveries_failed) %}
       def {{name.id}} : Int64
         @{{name.id}}.get
       end

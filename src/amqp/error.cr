@@ -92,6 +92,43 @@ module Amqp
   class ConcurrencyError < ChannelError
   end
 
+  class ChannelRpcTimeoutError < ChannelError
+  end
+
+  class PublishNackError < ChannelError
+    getter delivery_tag : UInt64
+
+    def initialize(@delivery_tag)
+      super("publish #{@delivery_tag} was nacked by broker")
+    end
+  end
+
+  class PublishTimeoutError < ChannelError
+    getter delivery_tag : UInt64
+    getter timeout : Time::Span
+
+    def initialize(@delivery_tag, @timeout)
+      super("publish #{@delivery_tag} was not confirmed within #{@timeout}")
+    end
+  end
+
+  class PublishReturnedError < ChannelError
+    getter delivery_tag : UInt64
+    getter reason : ReturnReason
+
+    def initialize(@delivery_tag, @reason)
+      super("publish #{@delivery_tag} was returned by broker: #{@reason.reply_code} #{@reason.reply_text}")
+    end
+  end
+
+  class PublishOutOfOrderError < ChannelError
+    getter delivery_tag : UInt64
+
+    def initialize(@delivery_tag)
+      super("broker confirmed unknown publish tag #{@delivery_tag}")
+    end
+  end
+
   class PreconditionFailedError < ChannelError
     getter reply_code : UInt16
     getter reply_text : String

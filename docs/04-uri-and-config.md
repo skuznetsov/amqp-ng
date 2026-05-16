@@ -79,9 +79,8 @@ percent-encoded in the URI; the shard rejects unencoded reserved
 characters by re-raising whatever `URI.parse` reports, wrapped in
 `Amqp::UriError`.
 
-After decoding, the credentials are passed to the SASL mechanism
-selected at handshake (PLAIN by default, EXTERNAL if explicitly
-requested; see §4).
+After decoding, the credentials are passed to the PLAIN SASL
+mechanism during `connection.start-ok` (see §4).
 
 **Falsifier:** T-URI-USERINFO-001..004.
 
@@ -112,14 +111,10 @@ avoid silent typos like `?heartbeats=30`).
 | `channel_max`  | Integer 1..65535           | Maximum channel-id requested at `connection.tune-ok`                | `2047`           |
 | `frame_max`    | Integer 4096..2147483647   | Maximum frame size requested at `connection.tune-ok`                | `131072` (128 KB)|
 | `connect_timeout` | Integer seconds         | Wall-clock bound on full handshake                                  | `30` seconds     |
-| `auth_mechanism`| One of `PLAIN`, `EXTERNAL`| SASL mechanism                                                      | `PLAIN`          |
+| `tcp_nodelay`  | `true` or `false`          | TCP_NODELAY socket option                                            | `false`          |
+| `buffer_size`  | Non-negative integer bytes | Socket/TLS IO buffer size; `0` disables IO buffering                 | `16384`          |
 | `recovery`     | `none` or `full`           | Recovery mode (see `docs/12-recovery.md`)                           | `none`           |
-| `verify`       | `peer` or `none`           | TLS peer-cert verification toggle (TLS only)                        | `peer`           |
-| `cacertfile`   | Filesystem path            | Trust anchor PEM (TLS only)                                         | system default   |
-| `certfile`     | Filesystem path            | Client certificate PEM (TLS, mTLS only)                             | none             |
-| `keyfile`      | Filesystem path            | Client private-key PEM (TLS, mTLS only)                             | none             |
-| `server_name`  | DNS name                   | TLS SNI override (TLS only); defaults to URI host                   | URI host         |
-| `product`      | String                     | `connection.start-ok` client-properties `product` field             | `"amqp.cr"`      |
+| `product`      | String                     | `connection.start-ok` client-properties `product` field             | `"amqp-ng"`      |
 | `information`  | String                     | `connection.start-ok` client-properties `information` field         | `""`             |
 
 ### 2.1 Numeric coercion
@@ -134,12 +129,12 @@ The shard MAY accept `?heartbeat=0` to mean "disabled" (broker MAY
 agree to it in `connection.tune-ok`; if not, the negotiated value
 wins).
 
-### 2.2 Boolean coercion
+### 2.2 Recovery coercion
 
-The `verify` parameter uses the strings `peer` / `none` rather than
+The `recovery` parameter uses the strings `none` / `full` rather than
 `true` / `false` / `1` / `0`. The shard MUST NOT accept boolean-style
-inputs for this key; the strings are explicit about what is being
-verified.
+input for this key; the strings are explicit about the recovery
+contract being enabled.
 
 ### 2.3 Conflict between query and keyword arguments
 
@@ -188,13 +183,9 @@ SHOULD list the recognised keys in the error to aid debugging.
 These options exist on `Amqp.connect` but NOT in the URI:
 
 - **`tls: OpenSSL::SSL::Context::Client`** — caller-supplied TLS
-  context. The URI's TLS-related query keys (`verify`, `cacertfile`,
-  `certfile`, `keyfile`, `server_name`) are a convenience that
-  constructs a context internally when `tls:` is `nil`; when `tls:`
-  is non-nil the TLS query keys MUST be unused — supplying both
-  raises `Amqp::TlsConfigError` synchronously. Rationale: a user
-  who passes a full context has already specified the TLS policy; the
-  URI's coarse flags would silently override their choices otherwise.
+  context. TLS policy is not represented in URI query parameters in
+  v0; a user who needs custom trust roots, client certificates, or SNI
+  policy passes a full context.
 - **`vhost: String`** — explicit override of the URI path. Used for
   the pathological empty-string vhost (which URIs cannot express) and
   for callers who prefer to keep the URI host-only.
@@ -206,7 +197,7 @@ revision of `docs/02-public-api.md`.
 
 ## 4. SASL mechanism
 
-v0 supports two SASL mechanisms:
+v0 supports one SASL mechanism:
 
 ### 4.1 PLAIN (default)
 
@@ -217,36 +208,20 @@ sends this in `connection.start-ok`'s `response` field.
 Failure (broker sends `connection.close` with reply-code 403 during
 `start-ok` / before `tune`) surfaces as `Amqp::AuthenticationError`.
 
-### 4.2 EXTERNAL
+### 4.2 Other mechanisms
 
-Selected via `?auth_mechanism=EXTERNAL`. The response field is empty;
-authentication is performed by the TLS layer (the broker reads the
-client certificate's subject and authenticates against it).
+AMQP defines EXTERNAL, AMQPLAIN, RABBIT-CR-DEMO, and others. v0 does
+NOT implement them. In v0, `auth_mechanism` is not a recognized query
+key and MUST raise `Amqp::UriError`.
 
-Pre-conditions:
-- The scheme MUST be `amqps://`.
-- The TLS context MUST supply a client certificate (either via
-  `certfile`/`keyfile` query keys or via the caller-supplied
-  `OpenSSL::SSL::Context::Client`).
-
-If pre-conditions fail, the shard MUST raise `Amqp::TlsConfigError`
-synchronously, before any socket I/O.
-
-The broker MAY still respond with reply-code 403 if it does not
-recognise the certificate's identity; that surfaces as
-`Amqp::AuthenticationError`.
-
-### 4.3 Other mechanisms
-
-AMQP defines AMQPLAIN, RABBIT-CR-DEMO, and others. v0 does NOT
-implement them. Adding a mechanism in v0.x requires:
+Adding a mechanism in v0.x requires:
 
 1. A new entry in this document with the response-byte layout.
 2. A falsifier T-SASL-* exercising it against a configured broker.
 3. A note in `docs/13-broker-compat-matrix.md` for any broker-specific
    variation.
 
-**Falsifier:** T-SASL-PLAIN-001, T-SASL-EXTERNAL-001..003.
+**Falsifier:** T-SASL-PLAIN-001, T-URI-UNKNOWN-001.
 
 ---
 
@@ -286,22 +261,13 @@ Amqp.connect("amqp://localhost/")
 # Production: TLS, dedicated user, prod vhost, tighter heartbeat.
 Amqp.connect("amqps://prod-app:#{secret}@rabbit.prod.example/prod?heartbeat=15")
 
-# mTLS via EXTERNAL, with files referenced from the URI.
-Amqp.connect(
-  "amqps://rabbit.prod.example/prod" \
-  "?auth_mechanism=EXTERNAL" \
-  "&certfile=/etc/secrets/client.pem" \
-  "&keyfile=/etc/secrets/client.key" \
-  "&cacertfile=/etc/secrets/ca.pem"
-)
-
-# mTLS via caller-supplied context (no TLS query keys allowed).
+# mTLS transport identity via caller-supplied context.
+# AMQP authentication still uses PLAIN credentials in v0.
 ctx = OpenSSL::SSL::Context::Client.new
 ctx.certificate_chain = "/etc/secrets/client.pem"
 ctx.private_key       = "/etc/secrets/client.key"
 ctx.ca_certificates   = "/etc/secrets/ca.pem"
-Amqp.connect("amqps://rabbit.prod.example/prod?auth_mechanism=EXTERNAL",
-             tls: ctx)
+Amqp.connect("amqps://prod-app:#{secret}@rabbit.prod.example/prod", tls: ctx)
 
 # Vhost with a slash in its name.
 Amqp.connect("amqp://localhost/staging%2Fweb")
@@ -325,7 +291,10 @@ end
   password both in userinfo and as a query key is a smell. The shard
   MUST raise `Amqp::UriError` if `password` ever appears as a query
   key, because §2 doesn't list it.
-- **Mixing `tls:` with TLS query keys** — see §3. Forbidden.
+- **Putting TLS policy in URI query keys.** TLS policy is represented
+  by a caller-supplied `tls:` context, not by URI keys such as
+  `verify`, `certfile`, or `server_name`. Those keys are rejected as
+  unknown.
 - **Concatenating un-escaped vhost names into URIs.** Always encode
   via `URI.encode_path_segment` (or equivalent stdlib) before
   building a URI string.

@@ -1,5 +1,6 @@
 require "../../error"
 require "../../properties"
+require "../frame"
 require "./types"
 
 module Amqp::Wire::AmqpZeroNineOne
@@ -97,6 +98,18 @@ module Amqp::Wire::AmqpZeroNineOne
       io.to_slice
     end
 
+    def write_empty_frame(io : IO,
+                          channel : UInt16,
+                          class_id : UInt16,
+                          body_size : UInt64) : Nil
+      Frame.write_prefix(io, FrameType::Header, channel, 14)
+      io.write_bytes(class_id, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(body_size, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+      io.write_byte(Amqp::Wire::FRAME_END)
+    end
+
     record Decoded, class_id : UInt16, body_size : UInt64, properties : Amqp::Properties
 
     def decode(payload : Bytes) : Decoded
@@ -109,9 +122,9 @@ module Amqp::Wire::AmqpZeroNineOne
       raise Amqp::ProtocolError.new("content-header continuation bit set") if (flags & 0x0001) != 0
 
       props = Amqp::Properties.new
-      props.content_type     = Types.read_shortstr(io) if (flags & FLAG_CONTENT_TYPE) != 0
+      props.content_type = Types.read_shortstr(io) if (flags & FLAG_CONTENT_TYPE) != 0
       props.content_encoding = Types.read_shortstr(io) if (flags & FLAG_CONTENT_ENCODING) != 0
-      props.headers          = Types.read_field_table(io) if (flags & FLAG_HEADERS) != 0
+      props.headers = Types.read_field_table(io) if (flags & FLAG_HEADERS) != 0
       if (flags & FLAG_DELIVERY_MODE) != 0
         raw = io.read_byte || raise Amqp::ProtocolError.new("eof reading delivery-mode")
         props.delivery_mode = case raw
@@ -125,16 +138,16 @@ module Amqp::Wire::AmqpZeroNineOne
         props.priority = io.read_byte || raise Amqp::ProtocolError.new("eof reading priority")
       end
       props.correlation_id = Types.read_shortstr(io) if (flags & FLAG_CORRELATION_ID) != 0
-      props.reply_to       = Types.read_shortstr(io) if (flags & FLAG_REPLY_TO) != 0
-      props.expiration     = Types.read_shortstr(io) if (flags & FLAG_EXPIRATION) != 0
-      props.message_id     = Types.read_shortstr(io) if (flags & FLAG_MESSAGE_ID) != 0
+      props.reply_to = Types.read_shortstr(io) if (flags & FLAG_REPLY_TO) != 0
+      props.expiration = Types.read_shortstr(io) if (flags & FLAG_EXPIRATION) != 0
+      props.message_id = Types.read_shortstr(io) if (flags & FLAG_MESSAGE_ID) != 0
       if (flags & FLAG_TIMESTAMP) != 0
         secs = io.read_bytes(Int64, IO::ByteFormat::NetworkEndian)
         props.timestamp = Time.unix(secs)
       end
-      props.type       = Types.read_shortstr(io) if (flags & FLAG_TYPE) != 0
-      props.user_id    = Types.read_shortstr(io) if (flags & FLAG_USER_ID) != 0
-      props.app_id     = Types.read_shortstr(io) if (flags & FLAG_APP_ID) != 0
+      props.type = Types.read_shortstr(io) if (flags & FLAG_TYPE) != 0
+      props.user_id = Types.read_shortstr(io) if (flags & FLAG_USER_ID) != 0
+      props.app_id = Types.read_shortstr(io) if (flags & FLAG_APP_ID) != 0
       props.cluster_id = Types.read_shortstr(io) if (flags & FLAG_CLUSTER_ID) != 0
 
       Decoded.new(class_id, body_size, props)

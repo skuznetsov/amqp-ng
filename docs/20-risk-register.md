@@ -240,9 +240,9 @@ broker may have a different `channel_max` post-restart, or may
 refuse the id for other reasons. The shard reassigns and updates
 `Channel#id`; callers caching the id see stale values.
 
-**Mitigation.** Documented in `docs/12-recovery.md` §5.1. The
-`RecoveryEvent` includes `channel_id_changes` map. Callers SHOULD
-NOT cache ids.
+**Mitigation.** Documented in `docs/12-recovery.md` §5.1. v0 recovery
+does not expose channel-id remapping callbacks; callers SHOULD NOT
+cache ids.
 
 **Severity.** Low.
 

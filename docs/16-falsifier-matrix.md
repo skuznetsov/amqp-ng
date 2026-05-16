@@ -8,8 +8,10 @@
 This is the **complete index** of every falsifier test referenced
 elsewhere in the doc set. Each row is the smallest test whose failure
 refutes the cited normative claim. The implementation MUST provide a
-spec file or perf script for every row before v0.1.0 ships
-(`docs/17-mvp-cutline.md` §3).
+spec file or perf script for every v0 row before v0.1.0 ships
+(`docs/17-mvp-cutline.md` §3). Rows explicitly marked "v1 reserved"
+are planning contracts for future AMQP 1.0 work and are not v0.1.0
+release gates.
 
 The matrix is organised by prefix:
 
@@ -28,8 +30,9 @@ The matrix is organised by prefix:
 | `T-ERR-*`    | Error model                       | `spec/errors/`                           |
 | `T-CODEC-*`  | Wire codec                        | `spec/codec/`                            |
 | `T-OBS-*`    | Observability / logging           | `spec/observability/`                    |
-| `T-PERF-*`   | Performance contract              | `spec/perf/`                             |
+| `T-PERF-*`   | Performance roadmap (reserved)    | `spec/perf/`                             |
 | `T-REL-*`    | Reliability contract (chaos)      | `spec/reliability/`                      |
+| `T-AMQP10-*` | AMQP 1.0 SDD (v1 reserved)        | `spec/amqp10/`                           |
 
 Each row below has:
 
@@ -76,7 +79,6 @@ the source doc.
 | ID                       | Asserts                                                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-SASL-PLAIN-001         | PLAIN response is `NUL + user + NUL + password`, accepted by broker.    | 04 §4.1                                |
-| T-SASL-EXTERNAL-001..003 | EXTERNAL preconditions; happy path; broker reject.                      | 04 §4.2                                |
 
 ---
 
@@ -90,9 +92,9 @@ the source doc.
 | T-CONN-TUNE-001..005     | `tune-ok` reconciliation rules (clamp, floor, 0-as-unlimited).          | 06 §6.2, 04 §5                         |
 | T-CONN-OPEN-001..003     | `connection.open` success, vhost 403, broker reject 530.                | 06 §7                                  |
 | T-CONN-INV-001..004      | Steady-state invariants (channel 0 reserved, no callbacks from reader, etc). | 06 §8                              |
-| T-CONN-CLOSE-001..010    | Each closure pathway and `close_reason.origin` value.                   | 06 §9                                  |
+| T-CONN-CLOSE-001..010    | Each closure pathway sets `close_reason` to the typed closure exception where available. | 06 §9             |
 | T-CONN-CHAN-001..004     | Channel allocation, id reuse, channel_max exhaustion.                   | 06 §10                                 |
-| T-CONN-BLOCKED-001       | `connection.blocked` flips `stats.blocked?`.                            | 06 §11                                 |
+| T-CONN-BLOCKED-001       | `connection.blocked/unblocked` updates flag and callbacks.              | 06 §11                                 |
 | T-CONN-FIBERS-001..003   | Exactly the documented fibers; no busy loop.                            | 06 §12                                 |
 | T-CONN-LEAK-001          | 1000 connect/close cycles, fiber count stable.                          | 06 §13                                 |
 
@@ -105,7 +107,9 @@ the source doc.
 | T-CHAN-OPEN-001..002     | Happy path; open timeout.                                               | 07 §2                                  |
 | T-CHAN-CONCURRENCY-001   | Concurrent state-change raises `ConcurrencyError`.                      | 07 §3.1                                |
 | T-CHAN-CONFIRMS-001      | `confirm_select` idempotent.                                            | 07 §3.2                                |
-| T-CHAN-FLOW-001          | `channel.flow` blocks/unblocks publishes.                               | 07 §3.3                                |
+| T-CHAN-FLOW-001          | Broker-initiated `channel.flow` blocks/unblocks publishes.               | 07 §3.3                                |
+| T-CHAN-FLOW-002          | Client-initiated `Channel#flow` receives `channel.flow-ok`.              | 07 §3.3                                |
+| T-CHAN-TX-001            | `tx.rollback` discards and `tx.commit` publishes transactional messages. | 02 §4.2                                |
 | T-CHAN-BROKERCLOSE-001..N| One per reply-code; correct exception subclass surfaces.                | 07 §5                                  |
 | T-CHAN-CALLERCLOSE-001   | Caller-initiated close, idempotent, no second exception.                | 07 §6                                  |
 | T-CHAN-CONNDIES-001..004 | All channels close when connection dies.                                | 07 §7                                  |
@@ -140,7 +144,7 @@ the source doc.
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-CONS-BLOCK-001..004    | Block form happy path; exception with auto_ack false → reject; exclusive collision; arguments forwarded. | 09 §2 |
 | T-CONS-SELECT-001        | `select when msg = sub.receive` compiles and runs.                      | 09 §3.3                                |
-| T-CONS-BACKPRESSURE-001  | Slow sub blocks frame-reader; speed-up releases.                        | 09 §3.4                                |
+| T-CONS-BACKPRESSURE-001  | Slow sub fills mailbox; unrelated channel RPC still completes before channel inbox saturation. | 09 §3.4                 |
 | T-CONS-CANCEL-001..003   | Caller cancel; broker cancel; drain after cancel.                       | 09 §3.5, §3.6                          |
 | T-CONS-SPAWN-001         | `spawn_loop` ack/reject semantics correct.                              | 09 §3.7                                |
 | T-CONS-GET-001..003      | `basic.get`: ok / empty / mid-channel-error.                            | 09 §4                                  |
@@ -169,13 +173,12 @@ the source doc.
 
 | ID                       | Asserts                                                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
-| T-TLS-SCHEME-001..003    | `amqp` + `tls:` rejected; `amqps` without TLS rejected; `amqps` + URI keys + ctx rejected. | 11 §1               |
-| T-TLS-CTX-001..003       | Caller-supplied passthrough; URI-driven build; default helper.          | 11 §2                                  |
+| T-TLS-SCHEME-001..003    | `amqp` + `tls:` rejected; `amqps` default TLS; TLS policy query keys rejected. | 11 §1                            |
+| T-TLS-CTX-001..003       | Caller-supplied passthrough; default build; default helper.             | 11 §2                                  |
 | T-TLS-SNI-001            | SNI passed to OpenSSL.                                                  | 11 §3.1                                |
 | T-TLS-HOSTNAME-001       | Hostname verification rejects wrong-SAN cert.                           | 11 §3.2, 20 RISK-2                     |
 | T-TLS-ERR-001..006       | Each stdlib error mapped to correct shard subclass.                     | 11 §3.3                                |
-| T-TLS-ROTATE-001         | Cert rotation observed on reconnect (URI-driven only).                  | 11 §4                                  |
-| T-TLS-EXTERNAL-001..003  | EXTERNAL preconditions, success, broker reject.                         | 11 §5                                  |
+| T-TLS-ROTATE-001         | Reconnect uses a fresh default context when no caller context was supplied. | 11 §4                               |
 | T-TLS-STATS-001          | `tls_version`/`tls_cipher`/`peer_certificate_subject` populated.        | 11 §6, 19 §2                           |
 
 ---
@@ -186,12 +189,15 @@ the source doc.
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-REC-TRIGGER-001..N     | Recovery triggered for each origin (network, heartbeat, recoverable broker); NOT triggered for caller / unrecoverable. | 12 §2 |
 | T-REC-BACKOFF-001        | Backoff schedule under deterministic Random.                            | 12 §4.1                                |
-| T-REC-ABANDON-001        | After `max_attempts`, surrenders to `RecoveryAbandoned`.                | 12 §4.2                                |
+| T-REC-ABANDON-001        | After `max_attempts`, surrenders with `RecoveryExhaustedError` or latest typed failure. | 12 §4.2              |
 | T-REC-ORDER-001..006     | Re-apply order: confirm.select, qos, exchanges, queues, bindings, consumers. | 12 §5                             |
 | T-REC-ALL-001            | Full sequence end-to-end against a real broker restart.                 | 12 §5                                  |
+| T-REC-RENAME-001         | Server-named queue recovery remaps consumers and default-exchange pending publish replay. | 12 §5                                  |
+| T-REC-TOPO-FAIL-001      | Broker rejection during topology replay fails closed with `RecoveryExhaustedError`. | 12 §5                                  |
+| T-REC-CONS-TAG-001       | Explicit consumer tags are re-installed and used for post-recovery deliveries. | 12 §3.2 / 12 §5                         |
+| T-REC-CONS-FAIL-001      | Broker rejection during consumer replay fails closed with `RecoveryExhaustedError`. | 12 §5                                  |
 | T-REC-REPLAY-001         | Kill broker mid-publish, recovery re-publishes, outcome resolves.       | 12 §6                                  |
 | T-REC-DURING-001..004    | Behavior during `Recovering`: publish, receive, topology, close.        | 12 §7                                  |
-| T-REC-CB-001..003        | `on_recovery` fires; exception logged not propagated; order preserved.  | 12 §8                                  |
 | T-REC-MEM-001            | Recovery records bounded under steady-state load.                       | 12 §9                                  |
 | T-REC-NONE-001           | With `Recovery::None`, broker close surfaces exception within 500 ms.   | 01 §P-10                               |
 
@@ -202,10 +208,8 @@ the source doc.
 | ID                       | Asserts                                                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-ERR-MAP-001..N         | Each row of the reply-code → subclass table.                            | 03 §3                                  |
-| T-ERR-ORIGIN-001..006    | `close_reason.origin` correct for each closure pathway.                 | 03 §4                                  |
-| T-ERR-RECOV-001..N       | `Amqp::Error.recoverable?(class)` matches the documented table.          | 03 §5                                  |
-| T-ERR-FIBER-001..005     | Each fiber's death path surfaces correct exception within bound.        | 03 §6                                  |
-| T-ERR-COMMIT-001..006    | The "no doubt" rule: each exception class correctly classifies commit state. | 03 §8                            |
+| T-ERR-FIELDS-001..N      | Broker close and publisher exceptions expose documented fields.          | 03 §2                                  |
+| T-ERR-COMMIT-001..006    | Publisher-confirm exception class correctly classifies commit state.     | 03 §5                                  |
 
 ---
 
@@ -217,11 +221,11 @@ and the frame corpus is captured. The IDs are reserved.
 | ID                       | Asserts (to be filled in 05-wire-0-9-1)                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-CODEC-PURE-001         | Codec module has no fibers, sockets, or non-Log module state.            | 01 §P-9                                |
-| T-CODEC-FRAME-001..N     | Frame encode/decode round-trip for each frame type.                     | 05/00 (TBD)                            |
-| T-CODEC-FIELD-001..N     | Each field type encodes/decodes correctly.                              | 05/01 (TBD)                            |
-| T-CODEC-METHOD-001..N    | Each method's argument list encodes correctly.                          | 05/02 (TBD)                            |
-| T-CODEC-PROPS-001..N     | Content-properties encoding matches the AMQP spec bytewise.             | 05/03 (TBD)                            |
-| T-CODEC-CORPUS-001       | Decode/encode round-trip for every captured frame in `spec/fixtures/frames/`. | 05/04 (TBD)                      |
+| T-CODEC-FRAME-001..N     | Frame encode/decode round-trip for each frame type.                     | 05/00                                  |
+| T-CODEC-FIELD-001..N     | Each field type encodes/decodes correctly.                              | 05/01                                  |
+| T-CODEC-METHOD-001..N    | Each method's argument list encodes correctly.                          | 05/02                                  |
+| T-CODEC-PROPS-001..N     | Content-properties encoding matches the AMQP spec bytewise.             | 05/03                                  |
+| T-CODEC-CORPUS-001       | Decode/encode round-trip for every captured frame in `spec/fixtures/frames/`. | 05/04                            |
 
 ---
 
@@ -229,11 +233,11 @@ and the frame corpus is captured. The IDs are reserved.
 
 | ID                       | Asserts                                                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
-| T-OBS-CONN-001..N        | One assertion per `ConnectionStats` field's update timing.              | 19 §2                                  |
-| T-OBS-CHAN-001..N        | One per `ChannelStats` field.                                            | 19 §3                                  |
-| T-OBS-SUB-001            | `SubscriptionStats` fields update correctly.                            | 19 §4                                  |
-| T-OBS-RECOVERY-001       | Counters preserved across recovery; `open_since` resets.                | 19 §5                                  |
-| T-OBS-LOG-001            | Each documented log event fires with the expected source name + severity. | 19 §6                              |
+| T-OBS-STATS-001..N       | `Amqp::Stats::Snapshot` counters start at zero and update on publish/confirm/consume/recovery events. | 19 §1, §2 |
+| T-OBS-LOG-001            | Reserved future logging contract.                                       | 19 §4                                  |
+
+`T-OBS-CONN-*`, `T-OBS-CHAN-*`, and `T-OBS-SUB-*` are reserved for the
+deferred rich stats model.
 
 ---
 
@@ -251,6 +255,9 @@ and the frame corpus is captured. The IDs are reserved.
 | T-PERF-STATS-001         | PERF-9 stats read < 1 µs/call.                                          | 14 §10                                 |
 | T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11                                 |
 
+These `T-PERF-*` rows are reserved roadmap falsifiers until
+`spec/perf/` exists. They are not current release-blocking checks.
+
 ---
 
 ## 15. Reliability (chaos)
@@ -264,6 +271,7 @@ and the frame corpus is captured. The IDs are reserved.
 | T-REL-ACK-IMMEDIATE-001  | REL-5: each ack is one wire frame, in order.                            | 15 §6                                  |
 | T-REL-RECOV-TOPO-001..003| REL-6: topology re-declared completely.                                 | 15 §7                                  |
 | T-REL-RECOV-CONFIRM-001  | REL-7: unconfirmed in-flight replayed, outcome resolves.                | 15 §8                                  |
+| T-REL-RECOV-DUP-001      | REL-7 caveat: if the original publish reached the broker before ack loss, replay can produce two deliveries. | 15 §8                                  |
 | T-REL-CALLER-CLOSE-001..002 | REL-8: caller close is final.                                         | 15 §9                                  |
 | T-REL-HB-DETECT-001      | REL-9: broker silence detected within `2*heartbeat + 500 ms`.             | 15 §10                                 |
 | T-REL-TLS-001..003       | REL-10: TLS verification rejects bad CA / wrong CN / expired cert.       | 15 §11                                 |
@@ -272,7 +280,26 @@ and the frame corpus is captured. The IDs are reserved.
 
 ---
 
-## 16. Maintenance rule
+## 16. AMQP 1.0 SDD (v1 reserved)
+
+These rows define the first executable milestones for future AMQP 1.0
+work. They are intentionally excluded from v0.1.0 acceptance criteria.
+
+| ID                       | Asserts                                                                 | Source doc                            |
+|--------------------------|-------------------------------------------------------------------------|---------------------------------------|
+| T-AMQP10-CUTLINE-001     | v0 builds expose no `Amqp::Session`, `Amqp::Link`, `protocol:` keyword, or AMQP 1.0 runtime path. | 22 §2                    |
+| T-AMQP10-CODEC-001..006  | AMQP 1.0 primitive codec covers null, booleans, integers, symbols, strings, and binary values byte-exactly. | 22 §4       |
+| T-AMQP10-PERFORMATIVE-001..011 | AMQP 1.0 performatives encode/decode byte-exactly for open, begin, attach, flow, transfer, disposition, detach, end, close, SASL init, and SASL outcome. | 22 §4 |
+| T-AMQP10-MSG-001..006    | AMQP 1.0 message sections round-trip for header, delivery-annotations, message-annotations, properties, application-properties, and data body. | 22 §5 |
+| T-AMQP10-HANDSHAKE-001..005 | SASL PLAIN, AMQP protocol header, open/begin, idle-timeout negotiation, and close handshake interoperate with one target broker. | 22 §6 |
+| T-AMQP10-LINK-001..008   | Sender and receiver links handle attach, credit, transfer, settlement, reject, release, detach, and link error. | 22 §7         |
+| T-AMQP10-API-001..006    | Public v1 API exposes connection/session/link concepts without reusing 0-9-1 channel/topology names incorrectly. | 22 §8       |
+| T-AMQP10-RECOV-001..004  | v1 reconnect policy defines unsettled delivery behavior, link reattach, duplicate risk, and fail-closed partial recovery. | 22 §9     |
+| T-AMQP10-BROKER-001..003 | RabbitMQ AMQP 1.0 plugin, ActiveMQ Artemis, or Qpid smoke targets are pinned and versioned before claims become normative. | 22 §10 |
+
+---
+
+## 17. Maintenance rule
 
 Every PR that touches normative prose in `docs/` MUST also update
 this matrix when:

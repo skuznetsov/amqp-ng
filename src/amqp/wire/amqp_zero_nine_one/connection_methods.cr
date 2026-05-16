@@ -10,20 +10,21 @@ module Amqp::Wire::AmqpZeroNineOne
   CLASS_ID_QUEUE      = 50_u16
   CLASS_ID_BASIC      = 60_u16
   CLASS_ID_CONFIRM    = 85_u16
+  CLASS_ID_TX         = 90_u16
 
   # Method ids for class 10 (connection).
-  METHOD_ID_CONNECTION_START      = 10_u16
-  METHOD_ID_CONNECTION_START_OK   = 11_u16
-  METHOD_ID_CONNECTION_SECURE     = 20_u16
-  METHOD_ID_CONNECTION_SECURE_OK  = 21_u16
-  METHOD_ID_CONNECTION_TUNE       = 30_u16
-  METHOD_ID_CONNECTION_TUNE_OK    = 31_u16
-  METHOD_ID_CONNECTION_OPEN       = 40_u16
-  METHOD_ID_CONNECTION_OPEN_OK    = 41_u16
-  METHOD_ID_CONNECTION_CLOSE      = 50_u16
-  METHOD_ID_CONNECTION_CLOSE_OK   = 51_u16
-  METHOD_ID_CONNECTION_BLOCKED    = 60_u16
-  METHOD_ID_CONNECTION_UNBLOCKED  = 61_u16
+  METHOD_ID_CONNECTION_START     = 10_u16
+  METHOD_ID_CONNECTION_START_OK  = 11_u16
+  METHOD_ID_CONNECTION_SECURE    = 20_u16
+  METHOD_ID_CONNECTION_SECURE_OK = 21_u16
+  METHOD_ID_CONNECTION_TUNE      = 30_u16
+  METHOD_ID_CONNECTION_TUNE_OK   = 31_u16
+  METHOD_ID_CONNECTION_OPEN      = 40_u16
+  METHOD_ID_CONNECTION_OPEN_OK   = 41_u16
+  METHOD_ID_CONNECTION_CLOSE     = 50_u16
+  METHOD_ID_CONNECTION_CLOSE_OK  = 51_u16
+  METHOD_ID_CONNECTION_BLOCKED   = 60_u16
+  METHOD_ID_CONNECTION_UNBLOCKED = 61_u16
 
   module ConnectionMethods
     extend self
@@ -184,6 +185,37 @@ module Amqp::Wire::AmqpZeroNineOne
       def to_payload : Bytes
         io = IO::Memory.new
         ConnectionMethods.write_method_payload(io, METHOD_ID_CONNECTION_CLOSE_OK) { }
+        io.to_slice
+      end
+    end
+
+    struct Blocked
+      getter reason : String
+
+      def initialize(@reason)
+      end
+
+      def self.read(io : IO) : self
+        new(Types.read_shortstr(io))
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        ConnectionMethods.write_method_payload(io, METHOD_ID_CONNECTION_BLOCKED) do
+          Types.write_shortstr(io, @reason)
+        end
+        io.to_slice
+      end
+    end
+
+    struct Unblocked
+      def self.read(io : IO) : self
+        new
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        ConnectionMethods.write_method_payload(io, METHOD_ID_CONNECTION_UNBLOCKED) { }
         io.to_slice
       end
     end

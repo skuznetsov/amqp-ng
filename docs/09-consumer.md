@@ -37,7 +37,7 @@ ch.consume(queue,
            auto_ack: false,
            exclusive: false,
            no_local: false,
-           arguments: nil) do |msg : DeliverMessage|
+           arguments: Arguments.new) do |msg : DeliverMessage|
   # process msg
   ch.ack(msg.delivery_tag) unless auto_ack
 end
@@ -46,19 +46,24 @@ end
 ### 2.1 Wire steps
 
 1. Acquire the per-channel state lock.
-2. Send `basic.consume(reserved=0, queue, consumer_tag, no_local,
-   no_ack=auto_ack, exclusive, no_wait=false, arguments=arguments)`.
-3. Synchronously await `basic.consume-ok` carrying the assigned
-   `consumer_tag`. If the caller supplied `consumer_tag == ""` the
-   broker assigns one; the shard MUST capture it for use in `basic.cancel`.
-4. Register the consumer in `Channel.consumer_registry` keyed by the
+2. Resolve the wire consumer tag. If the caller supplied
+   `consumer_tag == ""`, v0 generates a client-side
+   `amqp-ng-ctag-*` tag before sending `basic.consume`; it does not
+   ask the broker to assign a tag. This lets the shard register the
+   `Subscription` before a fast broker can send `basic.deliver`.
+3. Send `basic.consume(reserved=0, queue, resolved_consumer_tag,
+   no_local, no_ack=auto_ack, exclusive, no_wait=false,
+   arguments=arguments)`.
+4. Synchronously await `basic.consume-ok` echoing the resolved
+   `consumer_tag`.
+5. Register the consumer in `Channel.consumer_registry` keyed by the
    resolved consumer tag, pointing to an inline buffer for inbound
    deliveries.
-5. Release the per-channel state lock.
+6. Release the per-channel state lock.
 
-After step 5 the shard enters the **delivery loop** described in §2.2.
+After step 6 the shard enters the **delivery loop** described in §2.2.
 
-If step 3 raises (broker error, channel close), the shard MUST surface
+If step 4 raises (broker error, channel close), the shard MUST surface
 the exception and NOT enter the loop.
 
 ### 2.2 Delivery loop
@@ -146,7 +151,7 @@ sub = ch.subscribe(queue, consumer_tag: "", auto_ack: false, ...,
 
 ### 3.1 Wire steps
 
-Identical to §2.1 through step 4. Step 5 returns a `Subscription`
+Identical to §2.1 through step 5. Step 6 returns a `Subscription`
 instead of entering the delivery loop.
 
 The `Subscription` wraps a `::Channel(DeliverMessage)` of capacity
@@ -163,7 +168,6 @@ sub.closed?
 sub.close            # sends basic.cancel, drains inbox
 sub.each { |m| ... } # iterates until close
 sub.spawn_loop { |m| ... }  # spawns a fiber that runs each
-sub.stats
 ```
 
 ### 3.3 `receive` and `select` integration
@@ -195,35 +199,39 @@ shape matches `::Channel(T)#receive`.
 
 A concrete implementation strategy is to make `Subscription` inherit
 from or compose with `::Channel(DeliverMessage)`. The simplest correct
-shape: `Subscription` exposes a `::Channel(DeliverMessage)` directly
-(`sub.channel` is the `::Channel`, NOT the AMQP channel) and the
-public `Subscription#receive` is sugar over `sub.channel.receive`.
-The `channel` accessor and the inheritance choice are implementation
-details; the falsifier checks only that `select when ... = sub.receive`
-compiles and runs.
+shape: `Subscription` delegates Crystal select hooks to an internal
+`::Channel(DeliverMessage)`. The public `sub.channel` accessor remains
+the owning AMQP channel; the mailbox is an implementation detail. The
+falsifier checks only that `select when ... = sub.receive` compiles
+and runs.
 
 **Falsifier:** T-CONS-SELECT-001 — code sample from §3.3 compiles and
 delivers messages.
 
 ### 3.4 Backpressure
 
-When the subscription's inbox is full, the frame-reader fiber blocks
-on `inbox.send(delivery)`. This blocks the frame-reader for ALL
-channels on the connection. To mitigate, the shard MUST:
+When the subscription's inbox is full, the per-channel handler blocks
+on `inbox.send(delivery)`. Other channels on the same connection can
+continue while the connection reader can still enqueue into their
+per-channel inboxes. If the blocked channel's frame inbox also fills,
+the connection reader can eventually backpressure the whole connection.
+To mitigate, the shard MUST:
 
 - Default `buffer` to a small value (16) — high-throughput consumers
   set this explicitly per their workload.
-- Document this clearly: a slow consumer on one channel slows the
-  whole connection. This is intentional — the shard does not
-  silently drop deliveries (P-7).
+- Document this clearly: a slow consumer first stalls its own channel
+  and can later slow the whole connection if frames accumulate faster
+  than the channel handler drains them. This is intentional — the shard
+  does not silently drop deliveries (P-7).
 
 The recommendation in `docs/13-broker-compat-matrix.md` §X is to give
 each high-throughput consumer its own `Amqp::Connection`. The shard
 itself does NOT enforce this.
 
-**Falsifier:** T-CONS-BACKPRESSURE-001 — a slow subscription blocks
-the frame-reader; metrics confirm; speeding up the subscription
-releases it.
+**Falsifier:** T-CONS-BACKPRESSURE-001 — a slow subscription fills its
+mailbox; an opt-in live broker measurement verifies unrelated channels
+can still complete RPCs before the blocked channel's frame inbox
+saturates.
 
 ### 3.5 Subscription close
 
@@ -257,7 +265,9 @@ while consumer active, if the consumer registered with the
 3. Close the inbox.
 4. Set `closed? = true`.
 5. Unregister from the channel's consumer registry.
-6. (No state lock needed for this path; it runs on the frame-reader
+6. Dispatch `Channel#on_cancel` on a separate fiber if a callback is
+   registered.
+7. (No state lock needed for this path; it runs on the frame-reader
    fiber, and reading the consumer registry uses an internal mutex
    for that map's entries.)
 
@@ -278,32 +288,28 @@ sub.spawn_loop do |msg|
 end
 ```
 
-Equivalent to:
+v0 implementation:
 
 ```crystal
 spawn do
-  sub.each do |msg|
-    begin
-      yield msg
-      ch.ack(msg.delivery_tag) unless auto_ack
-    rescue ex
-      ch.reject(msg.delivery_tag, requeue: true) unless auto_ack
-      raise ex
-    end
-  end
+  sub.each { |msg| yield msg }
 end
 ```
 
-The shard MAY use a more efficient implementation; the semantics
-above are normative. The spawned fiber owns the subscription's
-lifetime: when the block raises, the fiber terminates and the
-subscription remains `Open` (the caller can still read from it from
-another fiber); when the subscription closes, the spawned fiber
-exits cleanly.
+The spawned fiber owns only that loop. When the block raises, the fiber
+terminates; v0 does not automatically reject the delivery or expose an
+`on_terminate` callback. Callers that need explicit reject/ack behavior
+should spawn their own loop and handle exceptions there. When the
+subscription closes, the spawned fiber exits cleanly.
 
-**Falsifier:** T-CONS-SPAWN-001.
+**Falsifier:** T-CONS-SPAWN-001 (deferred until a termination surface
+exists).
 
-### 3.8 `Subscription#stats`
+### 3.8 `Subscription#stats` (deferred)
+
+`Subscription#stats` is not part of the v0 public API. The richer
+stats surface below is a deferred observability target, not a current
+implementation requirement.
 
 ```crystal
 struct Amqp::SubscriptionStats
@@ -391,7 +397,7 @@ documentation distinguishes them; the `multiple:` flag is only on
 Calling `ack`/`nack`/`reject` with an unknown delivery tag does NOT
 fail synchronously. The broker responds by closing the channel with
 reply-code 406 (PRECONDITION_FAILED). The shard surfaces this as
-`Amqp::PrechargeError` on the NEXT blocked operation on this
+`Amqp::PreconditionFailedError` on the NEXT blocked operation on this
 channel; the failing `ack` itself has already returned.
 
 This is the AMQP-defined behavior; the shard cannot improve on it

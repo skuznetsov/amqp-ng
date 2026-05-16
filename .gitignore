@@ -11,6 +11,8 @@ shard.lock
 /tools/capture_proxy
 
 .DS_Store
+.tmp/
+.grok-acp/
 
 __pycache__/
 *.pyc

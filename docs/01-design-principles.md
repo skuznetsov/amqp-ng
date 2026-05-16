@@ -158,20 +158,17 @@ query-parameter parsing matrix.
 
 ### P-6. Performance is observable
 
-Every claim in `docs/14-performance-contract.md` is testable with a
-script committed to `spec/perf/`. The shard exports the metrics needed
-to falsify the claims:
+Performance targets in `docs/14-performance-contract.md` are roadmap
+targets until a `spec/perf/` harness exists. The current v0 shard
+exports a small counter surface:
 
-- `Connection#stats` returns a `ConnectionStats` snapshot: bytes sent,
-  bytes received, frames sent, frames received, channel count,
-  uptime, heartbeats sent, heartbeats received. Read access is
-  cheap (atomic loads, no lock).
-- `Channel#stats` returns a `ChannelStats` snapshot: messages published,
-  confirms received, confirms timed out, unconfirmed in flight,
-  deliveries received, manual acks, manual nacks.
+- `Connection#stats` returns `Amqp::Stats`; callers read
+  `Stats::Snapshot` counters for published, confirmed, returned,
+  consumed, and recovery events.
+- Rich per-connection/channel/subscription stats are deferred.
 
 These are observability primitives, not part of every hot-path call.
-Implementations MUST use `Atomic(Int64)` (or equivalent stdlib
+Implementations SHOULD use `Atomic(Int64)` (or equivalent stdlib
 atomic) for counters touched on the hot path, NOT a `Mutex`-guarded
 counter.
 
@@ -254,10 +251,10 @@ A planned third mode `Recovery::Manual` is sketched in
 Reason: partial recovery is a long tail of subtle bugs. Either the
 caller owns reconnect logic, or the shard does all of it.
 
-Falsifier: T-REC-001..N enumerate the survivability cases for
+Falsifier: T-REC-TRIGGER-001..N, T-REC-ORDER-001..006, and
+T-REC-REPLAY-001 enumerate the survivability cases for
 `Recovery::Full`; T-REC-NONE-001 asserts that with `Recovery::None` a
-broker close surfaces an exception to every blocked call within
-500 ms.
+broker close surfaces an exception to every blocked call within 500 ms.
 
 ### P-11. TLS is not optional optional
 
@@ -276,23 +273,23 @@ guards against future broker bugs).
   responsibility through the `OpenSSL::SSL::Context::Client` they pass;
   the shard does not silently weaken either.
 
-Falsifier: T-TLS-001..N (see `docs/11-tls.md`).
+Falsifier: T-TLS-SCHEME-001..003, T-TLS-CTX-001..003, T-TLS-SNI-001,
+T-TLS-HOSTNAME-001, and T-TLS-ERR-001..006 (see `docs/11-tls.md`).
 
 ### P-12. Observability is not free, but it is cheap
 
-Every operational decision the caller might need to make (is the
-broker slow? are confirms backing up? is the heartbeat near timeout?)
-MUST be answerable from `Connection#stats` / `Channel#stats` /
-`Subscription#stats` without enabling debug logging or instrumentation.
+The v0.1.0 operational surface is intentionally small: callers get
+`Connection#stats`, which returns the reduced `Amqp::Stats` counter
+object. Rich per-channel and per-subscription stats are deferred until
+their fields have executable falsifiers.
 
 - Stats fields are documented in `docs/19-observability.md`.
 - The shard MUST NOT add OpenTelemetry or any specific telemetry
   vendor dependency in v0. It exposes counters; integration is the
   caller's choice.
 
-Falsifier: T-OBS-001..N — for each documented operational question, a
-test asserts that the answer is derivable from the stats objects
-alone, no log-parsing.
+Falsifier: T-OBS-STATS-001..N — for each documented v0.1.0 counter, a
+test asserts that it updates without reading logs.
 
 ---
 

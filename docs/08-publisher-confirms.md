@@ -27,9 +27,12 @@ delivery-tag (monotonically increasing within the channel), and the
 broker sends exactly one `basic.ack(tag)` or `basic.nack(tag)` per
 publish — possibly batched via the `multiple` flag.
 
-The shard exposes three publish APIs (`docs/02-public-api.md` §4.2):
+The shard exposes four publish APIs (`docs/02-public-api.md` §4.2):
 
 - `publish` — no confirm wait; the caller does not need confirmation.
+- `publish_batch` — publishes many messages under one write critical
+  section and returns the registered delivery-tags in input order when
+  confirm mode is enabled.
 - `publish_confirm` — synchronous wait for ack/nack on the calling
   fiber.
 - `publish_async` — returns immediately with a delivery-tag and a
@@ -61,8 +64,10 @@ T-PUB-MODE-002 (idempotent enable).
 
 ## 3. Publish frame sequence
 
-Every publish (in any of the three APIs) emits the following frames
-in order, atomically under the connection's write mutex:
+Every publish (in any of the APIs) emits the following frames in order,
+atomically under the connection's write mutex. `publish_batch` repeats
+this frame sequence once per message while holding the same write
+critical section for the whole batch:
 
 1. **Method frame** (frame-type=1, channel=<channel-id>):
    `basic.publish(reserved=0, exchange, routing-key, mandatory, immediate)`.
@@ -79,7 +84,24 @@ in order, atomically under the connection's write mutex:
 The shard MUST hold the connection-level write mutex for the entire
 sequence. Atomic-publish falsifier: `T-CHAN-ATOMIC-PUBLISH-001`.
 
-### 3.1 Properties encoding
+### 3.1 Batch publish confirm semantics
+
+`publish_batch` does not create per-message outcome channels and does
+not wait for broker confirms. In confirm mode it returns an
+`Array(UInt64?)` containing the registered publish sequence for each
+input message; outside confirm mode it returns an equally sized array
+of `nil`.
+
+Callers who want a batch confirmation barrier call
+`wait_for_confirms` after `publish_batch`. Callers who need individual
+ack/nack/return outcomes use `publish_async` for those messages.
+
+In `Recovery::None`, pending confirm entries retain only routing and
+outcome metadata. In `Recovery::Full`, pending confirm entries also
+retain replay payloads until the broker settles them, because recovery
+may need to republish unconfirmed messages after reconnect.
+
+### 3.2 Properties encoding
 
 Properties present on the `Amqp::Properties` value object are
 encoded via the property-flags bitmap (see
@@ -286,10 +308,9 @@ close, per `docs/03` §8).
 When `Recovery::Full` is active and the connection recovers, the
 publish path MUST:
 
-1. During the dead window (no socket), `publish*` calls block until
-   recovery completes OR the recovery pipeline surrenders. The block
-   is on a per-connection `::Channel(Nil)` that closes when state
-   reaches `Open` or `Closed`.
+1. During the dead window (no socket), new `publish*` calls raise
+   `Amqp::RecoveryInProgress` synchronously. The shard does not queue
+   new caller work during recovery in v0.
 2. After re-open, the recovery pipeline re-publishes every
    unconfirmed in-flight publish from the previous incarnation, in
    monotonic order, on a fresh channel. The destinations of those

@@ -8,6 +8,10 @@ module Amqp::Wire::AmqpZeroNineOne
   METHOD_ID_EXCHANGE_DECLARE_OK = 11_u16
   METHOD_ID_EXCHANGE_DELETE     = 20_u16
   METHOD_ID_EXCHANGE_DELETE_OK  = 21_u16
+  METHOD_ID_EXCHANGE_BIND       = 30_u16
+  METHOD_ID_EXCHANGE_BIND_OK    = 31_u16
+  METHOD_ID_EXCHANGE_UNBIND     = 40_u16
+  METHOD_ID_EXCHANGE_UNBIND_OK  = 51_u16
 
   module ExchangeMethods
     extend self
@@ -63,6 +67,64 @@ module Amqp::Wire::AmqpZeroNineOne
     end
 
     struct DeleteOk
+      def self.read(io : IO) : self
+        new
+      end
+    end
+
+    struct Bind
+      getter destination : String
+      getter source : String
+      getter routing_key : String
+      getter arguments : Amqp::Arguments
+
+      def initialize(@destination, @source, @routing_key, @arguments)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_EXCHANGE, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_EXCHANGE_BIND, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+        Types.write_shortstr(io, @destination)
+        Types.write_shortstr(io, @source)
+        Types.write_shortstr(io, @routing_key)
+        BitPack.write(io, [false]) # no-wait
+        Types.write_field_table(io, @arguments)
+        io.to_slice
+      end
+    end
+
+    struct BindOk
+      def self.read(io : IO) : self
+        new
+      end
+    end
+
+    struct Unbind
+      getter destination : String
+      getter source : String
+      getter routing_key : String
+      getter arguments : Amqp::Arguments
+
+      def initialize(@destination, @source, @routing_key, @arguments)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_EXCHANGE, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_EXCHANGE_UNBIND, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+        Types.write_shortstr(io, @destination)
+        Types.write_shortstr(io, @source)
+        Types.write_shortstr(io, @routing_key)
+        BitPack.write(io, [false]) # no-wait
+        Types.write_field_table(io, @arguments)
+        io.to_slice
+      end
+    end
+
+    struct UnbindOk
       def self.read(io : IO) : self
         new
       end

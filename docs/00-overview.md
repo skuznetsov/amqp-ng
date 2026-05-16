@@ -203,7 +203,7 @@ nature dictates otherwise (e.g., the falsifier matrix is a table).
    a note in the implementation explaining the situation. `MAY` is
    discretionary.
 4. **Falsifier IDs** at the end of any section asserting a measurable
-   property: e.g., "Falsifier: T-CODEC-FIELD-DECIMAL-001". The matching
+   property: e.g., "Falsifier: T-CODEC-FIELD-001". The matching
    test must exist in `docs/16-falsifier-matrix.md` and `spec/`.
 5. **Cross-doc references** as relative paths
    (`docs/05-wire-0-9-1/01-types.md`).
@@ -251,14 +251,13 @@ The roadmap below is **informative**, not normative. Schedules may
 slip; the order of concerns is the part to hold steady.
 
 - **v0** (target: complete AMQP 0-9-1 client). Specs in `docs/`,
-  implementation under `src/`, falsifiers in `spec/`. v0.1.x ships
-  when every `MUST` in `docs/15-reliability-contract.md` and
-  `docs/14-performance-contract.md` has a passing falsifier on both
-  target brokers.
+  implementation under `src/`, falsifiers in `spec/`. v0.1.0 is the
+  urgent RabbitMQ/LavinMQ integration release; stricter full-matrix
+  hardening continues in v0.x.
 - **v0.x** (post-MVP polish): observability surface
   (`docs/19-observability.md`), broker-specific extension surface
   (e.g., RabbitMQ direct-reply-to, publisher confirms in transaction
-  mode), additional auth mechanisms beyond PLAIN and EXTERNAL.
+  mode), additional auth mechanisms beyond PLAIN.
 - **v1** (AMQP 1.0). Reserves a parallel wire-codec module per
   `docs/18-amqp-1-0-forward-plan.md` so the connection lifecycle picks
   the codec at handshake time and the rest of the runtime is shared.

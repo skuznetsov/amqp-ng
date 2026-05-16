@@ -29,6 +29,7 @@ module Amqp
       @content_encoding = nil,
       @headers = nil,
       @delivery_mode = nil,
+      persistence : Persistence? = nil,
       @priority = nil,
       @correlation_id = nil,
       @reply_to = nil,
@@ -40,6 +41,11 @@ module Amqp
       @app_id = nil,
       @cluster_id = nil,
     )
+      @delivery_mode = persistence || @delivery_mode
+    end
+
+    def persistence : Persistence?
+      @delivery_mode
     end
 
     def empty? : Bool

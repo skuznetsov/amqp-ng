@@ -114,7 +114,7 @@ The shard MUST use stdlib `TCPSocket.new(host, port, connect_timeout)`,
 where `connect_timeout` is the **remaining** budget at this step:
 
 ```
-remaining = total_timeout - (Time.monotonic - start)
+remaining = total_timeout - (Time.instant - start)
 ```
 
 If `remaining <= 0.seconds`, the shard MUST raise
@@ -154,7 +154,7 @@ TLS handshake errors:
 - `IO::TimeoutError` during handshake → `Amqp::ConnectTimeoutError`.
 
 Detailed TLS rules — including cipher policy, certificate-rotation
-guidance, and the EXTERNAL-mechanism interaction — live in
+guidance, and the deferred EXTERNAL-mechanism boundary — live in
 `docs/11-tls.md`.
 
 **Falsifier:** T-TLS-* (in 11-tls.md).
@@ -207,10 +207,9 @@ accepting the protocol header. Fields:
 If `version-major != 0` or `version-minor != 9`, the shard MUST raise
 `Amqp::ProtocolNegotiationError` and transition to `Closed`.
 
-If the requested SASL mechanism (PLAIN or EXTERNAL, per
-`docs/04-uri-and-config.md` §4) is NOT in the broker's `mechanisms`
-list, the shard MUST raise `Amqp::AuthenticationError` synchronously
-with `reply_text` reporting both lists.
+If PLAIN is NOT in the broker's `mechanisms` list, the shard MUST raise
+`Amqp::AuthenticationError` synchronously with `reply_text` reporting
+the offered list.
 
 ### 5.2 Sending `connection.start-ok`
 
@@ -219,7 +218,7 @@ Fields:
 | Field              | Value                                                       |
 |--------------------|-------------------------------------------------------------|
 | client-properties  | field-table; see §5.3                                       |
-| mechanism          | "PLAIN" or "EXTERNAL"                                       |
+| mechanism          | "PLAIN"                                                     |
 | response           | mechanism-specific bytes (`docs/04-uri-and-config.md` §4)  |
 | locale             | "en_US"                                                     |
 
@@ -437,7 +436,7 @@ block until `Open` is reached again or the recovery pipeline
 surrenders.
 
 **Falsifier:** T-CONN-CLOSE-001..010 covering each closure pathway and
-each `close_reason.origin` value.
+the typed exception surfaced to blocked callers.
 
 ---
 
@@ -465,8 +464,8 @@ each `close_reason.origin` value.
 If `channel_max` is exhausted, raise `Amqp::ChannelLimitError`.
 
 `Connection#channel(id : UInt16)` does the same but with a caller-
-supplied id; on collision raise `Amqp::ChannelInUseError`; if `id`
-is outside `1..channel_max`, raise `Amqp::ConfigurationError`.
+supplied id; on collision or out-of-range id raise
+`Amqp::ChannelLimitError`.
 
 **Falsifier:** T-CONN-CHAN-001..004.
 
@@ -479,15 +478,18 @@ notifications (the broker tells the client "I'm at resource limit;
 publishes will stall"). The shard MUST:
 
 - Accept both methods on channel 0.
-- Update an internal flag observable via `ConnectionStats#blocked?`.
+- Update `Connection#blocked?`.
+- Invoke `Connection#on_blocked` / `Connection#on_unblocked`
+  callbacks, if registered. The callbacks run on spawned fibers so
+  user code cannot block the connection reader.
 - NOT slow down publishes synthetically — the broker's TCP backpressure
   is already the mechanism that stalls them. Surfacing the flag is for
   the caller's observability.
 
 LavinMQ implements the same methods; behavior matches.
 
-**Falsifier:** T-CONN-BLOCKED-001 — stub broker sends `blocked`,
-verifies `stats.blocked?` flips; `unblocked` flips it back.
+**Falsifier:** T-CONN-BLOCKED-001 — synthetic blocked/unblocked frames
+update `blocked?` and dispatch callbacks.
 
 ---
 
@@ -564,8 +566,7 @@ On every path to `Closed`:
 3. Per-channel inboxes MUST be closed.
 4. The free-id structure MUST be reset (recovery may reuse the
    connection object).
-5. Counters in `ConnectionStats` MUST be frozen (atomic reads continue
-   to work; writes stop).
+5. `Amqp::Stats` counters remain readable; writes stop.
 
 The shard MUST NOT leak fibers. Tests assert this by counting
 `Fiber.list.size` before and after a `connect`/`close` cycle (with

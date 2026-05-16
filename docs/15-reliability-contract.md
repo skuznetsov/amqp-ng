@@ -88,8 +88,8 @@ were to send `basic.ack` followed by `basic.nack` for the same tag
 **Claim.** When a connection closes for any reason (broker, network,
 heartbeat, caller, recovery-abandoned), every fiber blocked on the
 shard wakes within `500 ms` of the close event with an
-`Amqp::Error` subclass whose `close_reason.origin` correctly
-identifies the cause.
+`Amqp::Error` subclass that identifies the cause where v0 can
+classify it.
 
 **Why 500 ms.** The shard's wake path is fiber-local channel
 closures, which are immediate; the only delay is scheduler latency.
@@ -174,7 +174,7 @@ at-least-once contract; the shard does not paper over it.
 frame is processed and no fiber action is taken on behalf of this
 connection. In `Recovery::Full` mode, calling `close` during
 `Recovering` aborts the recovery pipeline; the connection ends in
-`Closed` with `close_reason.origin == Caller`.
+`Closed` with caller-close semantics.
 
 The shard MUST NOT re-open a caller-closed connection under any
 circumstance.

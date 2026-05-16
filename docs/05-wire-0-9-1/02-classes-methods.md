@@ -29,17 +29,17 @@ them.
 | `40`              | `0x0028`       | `exchange`    | REQUIRED  |
 | `50`              | `0x0032`       | `queue`       | REQUIRED  |
 | `60`              | `0x003C`       | `basic`       | REQUIRED  |
-| `90`              | `0x005A`       | `tx`          | OUT (v0)  |
+| `90`              | `0x005A`       | `tx`          | REQUIRED  |
 | `85`              | `0x0055`       | `confirm`     | REQUIRED  |
 
 Class id `30` (`access`) is deprecated in AMQP 0-9-1; brokers ignore
 it. The v0 codec MUST NOT emit it and MUST treat receipt as a no-op
 with a `Debug`-level log.
 
-Class id `90` (`tx`) is the transactional class. v0 does not support
-transactions (`docs/17-mvp-cutline.md` §2.4). The codec MUST NOT
-emit it. If the broker emits it (no reason it would, since v0 never
-sends `tx.select`), the codec raises `Amqp::ProtocolError`.
+Class id `90` (`tx`) is the transactional class. v0 supports the
+broker-native synchronous `tx.select`, `tx.commit`, and `tx.rollback`
+methods as a compatibility surface. Recovery does not attempt to
+preserve an in-flight transaction across reconnect.
 
 Class id `85` (`confirm`) is RabbitMQ's extension. RabbitMQ
 advertises the `publisher_confirms` capability during
@@ -84,15 +84,16 @@ All `connection.*` methods are sent on channel `0`.
 | `71`      | `0x0047` | `update-secret-ok`    | S    | client→server | OUT (v0)³ |
 
 ¹ `secure`/`secure-ok` are part of the SASL challenge-response loop.
-PLAIN and EXTERNAL (the v0-supported mechanisms,
-`docs/04-uri-and-config.md` §4) complete authentication in a single
+PLAIN (the v0.1.0-supported mechanism,
+`docs/04-uri-and-config.md` §4) completes authentication in a single
 `start-ok`; neither broker invokes `secure` for these mechanisms. The
 codec MUST raise `Amqp::ProtocolError` on receipt — surfacing as
 "unsupported SASL flow."
 
 ² `blocked`/`unblocked` are RabbitMQ extensions advertised via the
-`connection.blocked` capability. v0 surfaces the boolean to callers
-via `ConnectionStats#blocked?`.
+`connection.blocked` capability. v0 decodes them as asynchronous
+connection methods and exposes `Connection#blocked?`,
+`Connection#on_blocked`, and `Connection#on_unblocked`.
 
 ³ `update-secret` is a RabbitMQ 3.8+ extension for credential
 rotation without reconnect. Deferred to v0.x.
@@ -133,11 +134,12 @@ Client→server. Argument list:
   `connection.blocked: true`, `consumer_cancel_notify: true`,
   `publisher_confirms: true`.
 
-`mechanism` is `PLAIN` or `EXTERNAL` for v0.
+`mechanism` is `PLAIN` for v0.1.0.
 
 `response` for `PLAIN` is `NUL + user + NUL + password` (a single
-longstr containing exactly that byte sequence). For `EXTERNAL`, it
-is an empty longstr.
+longstr containing exactly that byte sequence). Future `EXTERNAL`
+support would use an empty longstr, but it is not implemented in
+v0.1.0.
 
 `locale` is one of the locales the server advertised in `start`;
 v0 sends `"en_US"`.
@@ -199,8 +201,9 @@ mechanism PLAIN. For details see the broker logfile."`.
 Server→client async. `blocked` argument: `reason` (shortstr).
 `unblocked` has no arguments.
 
-The codec MUST update `ConnectionStats#blocked?` and log at `Warn`
-on `blocked`; on `unblocked`, log at `Info`.
+The codec MUST accept both methods and route them through the
+connection async-method handler. The handler updates `blocked?` and
+dispatches registered callbacks without blocking the reader fiber.
 
 ---
 
@@ -385,8 +388,8 @@ spec.
 | `80`      | `0x0050` | `ack`             | A    | client→server | REQUIRED |
 | `90`      | `0x005A` | `reject`          | A    | client→server | REQUIRED |
 | `100`     | `0x0064` | `recover-async`   | A    | client→server | OUT (v0) |
-| `110`     | `0x006E` | `recover`         | S    | client→server | OUT (v0) |
-| `111`     | `0x006F` | `recover-ok`      | S    | server→client | OUT (v0) |
+| `110`     | `0x006E` | `recover`         | S    | client→server | REQUIRED |
+| `111`     | `0x006F` | `recover-ok`      | S    | server→client | REQUIRED |
 | `120`     | `0x0078` | `nack`            | A    | both          | REQUIRED |
 
 ### 7.1 basic.qos (60.10)
@@ -540,6 +543,28 @@ A broker that does not advertise this capability raises
 
 ---
 
+## 8.2 Class 90 — tx
+
+| Method id | Hex      | Name          | Type | Direction | Status |
+|-----------|----------|---------------|------|-----------|--------|
+| `10`      | `0x000A` | `select`      | S    | client→server | REQUIRED |
+| `11`      | `0x000B` | `select-ok`   | S    | server→client | REQUIRED |
+| `20`      | `0x0014` | `commit`      | S    | client→server | REQUIRED |
+| `21`      | `0x0015` | `commit-ok`   | S    | server→client | REQUIRED |
+| `30`      | `0x001E` | `rollback`    | S    | client→server | REQUIRED |
+| `31`      | `0x001F` | `rollback-ok` | S    | server→client | REQUIRED |
+
+`tx.select`, `tx.commit`, and `tx.rollback` have no method arguments.
+The public API exposes them as `Channel#tx_select`,
+`Channel#tx_commit`, `Channel#tx_rollback`, and
+`Channel#transaction`.
+
+The shard does not promise to preserve an in-flight transaction across
+automatic recovery. Use publisher confirms for recoverable publish
+flows.
+
+---
+
 ## 9. Reply-code → exception mapping
 
 The codec maps `connection.close` / `channel.close` reply-codes to
@@ -548,8 +573,9 @@ mapping table lives in the error model document; the codec MUST emit
 the canonical mapping.
 
 The codec MUST preserve `reply-text`, `class-id`, and `method-id`
-fields in the resulting `Amqp::CloseReason` so the caller can
-inspect them.
+when constructing the typed close exception so callers and tests can
+inspect broker close details. v0 does not expose a separate public
+`Amqp::CloseReason` value.
 
 ---
 

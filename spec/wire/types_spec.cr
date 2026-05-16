@@ -87,8 +87,8 @@ describe Amqp::Wire::AmqpZeroNineOne::Types do
 
     it "raises on the 'D' decimal tag" do
       io = IO::Memory.new
-      io.write_byte(0x44_u8)       # 'D'
-      io.write_byte(0_u8)          # scale
+      io.write_byte(0x44_u8) # 'D'
+      io.write_byte(0_u8)    # scale
       io.write_bytes(0_u32, IO::ByteFormat::NetworkEndian)
       io.rewind
       expect_raises(Amqp::ProtocolError, /decimal.*not supported/) do

@@ -30,23 +30,29 @@ Amqp                              -- module-level connect helpers, version const
 ├── Connection                    -- one TCP/TLS connection
 ├── Channel                       -- one AMQP channel within a connection
 ├── Properties                    -- AMQP 0-9-1 basic-properties value object
-├── Arguments                     -- typed wrapper for AMQP field-table arguments
+├── Arguments                     -- AMQP field-table alias
 ├── Message                       -- bytes + properties + routing key (publish/get/deliver)
 ├── DeliverMessage                -- delivery received by a consumer
 ├── GetMessage                    -- result of synchronous get
 ├── Subscription                  -- object form of a consumer
+├── Queue                         -- amqp-client.cr-style queue wrapper
+├── Exchange                      -- amqp-client.cr-style exchange wrapper
 ├── ConfirmOutcome                -- async-publish outcome value
-├── ConnectionStats               -- snapshot of connection counters
-├── ChannelStats                  -- snapshot of channel counters
+├── ReturnedMessage               -- basic.return callback payload
+├── Stats                         -- connection-level counters and snapshots
 ├── Recovery                      -- enum: None | Full
-├── Persistence                   -- enum: Transient | Persistent
+├── Persistence                   -- alias: Properties::Persistence
 ├── Error                         -- root of the exception hierarchy
 └── …subclasses of Error         -- see docs/03-error-model.md
 ```
 
-Names not in this list are not part of the public API. In particular,
-`Amqp::Frame`, `Amqp::Codec`, `Amqp::Wire::*`, and the per-method
-classes (`basic.publish`, `queue.declare`, …) are internal.
+Crystal exposes some implementation constants at top level because the
+wire codec and helpers live in the same shard namespace. The supported
+caller API is the list above plus the exception subclasses in
+`docs/03-error-model.md`. `Amqp::Config`, `Amqp::QueueInfo`,
+`Amqp::Delivery`, `Amqp::Wire::*`, and the per-method wire classes are
+implementation-visible but unsupported: callers who depend on them do
+so outside the v0 compatibility surface.
 
 The shard MUST define a public constant `Amqp::VERSION : String`
 returning the shard's semver string. Tooling reads this; the shard
@@ -70,7 +76,7 @@ module Amqp
                    connect_timeout : Time::Span = 30.seconds,
                    tls : OpenSSL::SSL::Context::Client? = nil,
                    recovery : Recovery = Recovery::None,
-                   product : String = "amqp.cr",
+                   product : String = "amqp-ng",
                    information : String = ""
                   ) : Connection
 
@@ -91,9 +97,9 @@ end
   negotiation through `connection.open-ok`). On exceeding the bound the
   call MUST raise `Amqp::ConnectTimeoutError`.
 - `tls` MUST be `nil` for `amqp://` URIs and MAY be supplied for
-  `amqps://`. Mixing (`amqp://` with `tls:`, or `amqps://` with `tls:
-  nil`) MUST raise `Amqp::ConfigurationError` synchronously, before any
-  socket I/O.
+  `amqps://`. `amqp://` with `tls:` MUST raise
+  `Amqp::ConfigurationError` synchronously, before any socket I/O.
+  `amqps://` with `tls: nil` uses `tls_context_default`.
 - The block form MUST call `conn.close` on both normal block return
   and exception escape, and MUST NOT swallow the exception. The block's
   return value is discarded.
@@ -113,9 +119,9 @@ finally semantics.
 ```crystal
 class Amqp::Connection
   # Lifecycle
-  def close(*, reply_code : UInt16 = 200, reply_text : String = "") : Nil
+  def close(*, reply_code : UInt16 = 200, reply_text : String = "OK") : Nil
   def closed? : Bool
-  def close_reason : Amqp::CloseReason?         -- see docs/03
+  def close_reason : Exception?                 -- typed Amqp::Error where possible
 
   # Channels
   def channel : Channel
@@ -126,14 +132,16 @@ class Amqp::Connection
   def heartbeat : Time::Span
   def channel_max : UInt16
   def frame_max : UInt32
-  def server_properties : Hash(String, Amqp::FieldValue)
+  def server_properties : Amqp::Arguments
 
   # Observability
-  def stats : ConnectionStats
+  def stats : Amqp::Stats
+  def blocked? : Bool
+  def on_blocked(& : String -> Nil) : Nil
+  def on_unblocked(& : -> Nil) : Nil
 
   # Recovery (informational; behavior in docs/12)
   def recovery_mode : Recovery
-  def on_recovery(& : RecoveryEvent ->) : Nil   -- registers a callback
 end
 ```
 
@@ -146,17 +154,16 @@ end
   silently. Exceptions during teardown are logged but not raised.
 - `closed?` becomes `true` after teardown completes for any reason
   (caller close, broker close, heartbeat timeout, socket EOF).
-- `close_reason` returns `nil` while the connection is open and a
-  populated `CloseReason` value object after closure. Callers
-  inspecting this field MUST be prepared for the connection to close
-  between their `closed?` check and their `close_reason` read.
+- `close_reason` returns `nil` while the connection is open and the
+  exception that caused closure after closure. The exception is a typed
+  `Amqp::Error` where the shard can classify the failure.
 - `channel` allocates the next free channel id in `1..channel_max`
   inclusive (channel 0 is reserved by the protocol). Allocation MUST
   be O(1) amortised and MUST be safe to call concurrently from
   different fibers (the call serialises internally).
 - `channel(id)` is for callers who require a specific channel id. On
   collision with an already-open channel the method raises
-  `Amqp::ChannelInUseError`.
+  `Amqp::ChannelLimitError`.
 - `with_channel` opens a fresh channel, yields it, and closes it on
   both normal block exit and exception escape. Exception escape MUST
   preserve the original exception (no swallowing).
@@ -165,13 +172,10 @@ end
   Reading them before `connect` returns is impossible (the call had
   not returned); reading them after `close` returns the last
   negotiated values for diagnostic use.
-- `stats` is described in `docs/19-observability.md`. Reads MUST be
-  cheap (atomic loads).
-- `on_recovery` registers a callback that fires after every successful
-  reconnect (in `Recovery::Full` mode). The callback receives a value
-  describing what was re-established. In `Recovery::None` the callback
-  is never invoked. Multiple callbacks MAY be registered; they fire in
-  registration order on the recovery fiber.
+- `stats` returns the current v0 `Amqp::Stats` counter object; callers
+  read an immutable `Stats::Snapshot` via `conn.stats.snapshot`.
+- `recovery_mode` reflects the configured mode. Recovery callbacks and
+  rich recovery-event values are not v0 public API.
 
 **Concurrency.** `Connection` is safe to share across fibers after
 `connect` returns. The connection-level write mutex serialises frame
@@ -188,8 +192,12 @@ The channel is the entrypoint for publishing, consuming, and topology
 declaration. Each `Channel` is owned by a single fiber for the
 purposes of state-changing operations; concurrent state-changing
 calls from different fibers raise `Amqp::ConcurrencyError`. The
-`Subscription` returned by `subscribe` is the way to fan deliveries
-out to other fibers safely.
+exception is fire-and-forget `publish` / non-confirm `publish_batch`:
+these calls do not await a broker method continuation, so they may be
+serialised through the connection write mutex as long as their AMQP
+method/header/body frame sequence is not interleaved. The
+`Subscription` returned by `subscribe` is the way to fan deliveries out
+to other fibers safely.
 
 ### 4.1 Lifecycle
 
@@ -198,15 +206,13 @@ class Amqp::Channel
   def id : UInt16
   def open? : Bool
   def closed? : Bool
-  def close(*, reply_code : UInt16 = 200, reply_text : String = "") : Nil
-  def close_reason : Amqp::CloseReason?
+  def close(*, reply_code : UInt16 = 200, reply_text : String = "OK") : Nil
+  def close_reason : Exception?
 
   def confirms_enabled? : Bool
   def confirm_select : Nil                     -- enable publisher confirms (idempotent)
 
   def prefetch(count : UInt16, *, global : Bool = false) : Nil
-
-  def stats : ChannelStats
 end
 ```
 
@@ -233,7 +239,66 @@ class Amqp::Channel
               *,
               mandatory : Bool = false,
               immediate : Bool = false
-             ) : Nil
+             ) : UInt64?
+
+  # Batched publish. In non-confirm mode, writes all messages under one
+  # connection write critical section without taking the channel
+  # continuation lock. In confirm mode, every message is registered in
+  # the confirm tracker.
+  # Returns one publish sequence per message in confirm mode, otherwise
+  # one nil per message.
+  def publish_batch(messages : Array(Message),
+                    exchange : String,
+                    routing_key : String,
+                    *,
+                    mandatory : Bool = false,
+                    immediate : Bool = false
+                   ) : Array(UInt64?)
+
+  def publish_batch(bodies : Array(Bytes),
+                    exchange : String,
+                    routing_key : String,
+                    *,
+                    properties : Properties = Properties.new,
+                    mandatory : Bool = false,
+                    immediate : Bool = false
+                   ) : Array(UInt64?)
+
+  # amqp-client.cr compatibility aliases. New code should prefer the
+  # shorter amqp-ng method names above.
+  def basic_publish(body : Bytes | String, exchange : String, routing_key : String = "", ...)
+    : UInt64
+  def basic_publish(io : IO, bytesize : Int, exchange : String, routing_key : String = "", ...)
+    : UInt64
+  def basic_publish_confirm(body : Bytes | String, exchange : String, routing_key : String = "", ...)
+    : Bool
+  def basic_publish_confirm(io : IO, bytesize : Int, exchange : String, routing_key : String = "", ...)
+    : Bool
+  def basic_get(queue : String, no_ack : Bool = true) : GetMessage?
+  def basic_consume(queue : String, tag : String = "", no_ack : Bool = true, ...)
+    : String
+  def basic_cancel(consumer_tag : String, no_wait : Bool = false) : Nil
+  def basic_ack(delivery_tag : UInt64, multiple : Bool = false) : Nil
+  def basic_reject(delivery_tag : UInt64, requeue : Bool = false) : Nil
+  def basic_nack(delivery_tag : UInt64, requeue : Bool = false, multiple : Bool = false) : Nil
+  def basic_qos(count : UInt16, global : Bool = false) : Nil
+  def basic_recover(requeue : Bool = true) : Nil
+  def flow(active : Bool) : Nil
+  def tx_select : Nil
+  def tx_commit : Nil
+  def tx_rollback : Nil
+  def transaction(& : -> T) : T forall T
+  def on_return(& : ReturnedMessage -> Nil) : Nil
+  def on_cancel(& : String -> Nil) : Nil
+  def on_close(& : UInt16, String -> Nil) : Nil
+  def queue : Queue
+  def queue(name : String, ...) : Queue
+  def exchange(name : String, type : String, ...) : Exchange
+  def default_exchange : Exchange
+  def direct_exchange(name : String = "amq.direct", passive : Bool = true) : Exchange
+  def topic_exchange(name : String = "amq.topic", passive : Bool = true) : Exchange
+  def fanout_exchange(name : String = "amq.fanout", passive : Bool = true) : Exchange
+  def header_exchange(name : String = "amq.headers", passive : Bool = true) : Exchange
 
   # Synchronous confirm. Blocks the calling fiber until broker ack/nack
   # or `timeout` elapses. Returns true on ack, raises on nack or
@@ -260,9 +325,16 @@ end
 
 **Notes.**
 
-- `Message` is the in-memory representation; see §6 for the type. A
-  `String` body is implicitly wrapped (`Message.new(body)`) via an
-  overload; details in §6.
+- `Message` is the in-memory representation; see §6 for the type.
+  Convenience overloads accept `Bytes` bodies with explicit
+  `Properties`.
+- `publish` returns the registered publish sequence when the channel
+  is in confirm mode, otherwise `nil`. Callers who need an outcome use
+  `publish_confirm` or `publish_async`.
+- `publish_batch` preserves input order and returns sequence numbers
+  in that same order when confirm mode is enabled. It does not wait for
+  broker outcomes; callers use `wait_for_confirms` for a batch barrier,
+  or `publish_async` when they need a per-message outcome channel.
 - `immediate: true` is rejected by RabbitMQ and LavinMQ at the broker
   level (returns a `channel.close` with reply-code 540). The shard
   MUST pass the flag through unchanged so callers see the broker
@@ -295,7 +367,7 @@ class Amqp::Channel
               auto_ack : Bool = false,
               exclusive : Bool = false,
               no_local : Bool = false,
-              arguments : Arguments? = nil,
+              arguments : Arguments = Arguments.new,
               & : DeliverMessage ->) : Nil
 end
 ```
@@ -324,7 +396,7 @@ class Amqp::Channel
                 auto_ack : Bool = false,
                 exclusive : Bool = false,
                 no_local : Bool = false,
-                arguments : Arguments? = nil,
+                arguments : Arguments = Arguments.new,
                 buffer : Int32 = 16
                ) : Subscription
 end
@@ -332,8 +404,10 @@ end
 
 - `buffer` sets the capacity of the internal `::Channel(DeliverMessage)`
   the Subscription wraps. The shard MUST apply backpressure when the
-  buffer fills: the frame-reader fiber blocks on the per-channel
-  inbox, which propagates flow back to the broker via TCP backpressure.
+  buffer fills: the per-channel handler blocks on the subscription
+  inbox. If that channel's frame inbox also fills, pressure can
+  propagate to the connection reader and then to the broker via TCP
+  backpressure.
   The shard MUST NOT silently drop deliveries.
 
 ### 4.5 Synchronous get
@@ -374,7 +448,7 @@ class Amqp::Channel
                     durable : Bool = false,
                     exclusive : Bool = false,
                     auto_delete : Bool = false,
-                    arguments : Arguments? = nil
+                    arguments : Arguments = Arguments.new
                    ) : Amqp::QueueDeclareOk
 
   def queue_delete(name : String,
@@ -387,14 +461,14 @@ class Amqp::Channel
                  exchange : String,
                  routing_key : String,
                  *,
-                 arguments : Arguments? = nil
+                 arguments : Arguments = Arguments.new
                 ) : Nil
 
   def queue_unbind(queue : String,
                    exchange : String,
                    routing_key : String,
                    *,
-                   arguments : Arguments? = nil
+                   arguments : Arguments = Arguments.new
                   ) : Nil
 
   def queue_purge(name : String) : UInt32       -- message_count
@@ -406,7 +480,7 @@ class Amqp::Channel
                        durable : Bool = false,
                        auto_delete : Bool = false,
                        internal : Bool = false,
-                       arguments : Arguments? = nil
+                       arguments : Arguments = Arguments.new
                       ) : Nil
 
   def exchange_delete(name : String, *, if_unused : Bool = false) : Nil
@@ -415,14 +489,14 @@ class Amqp::Channel
                     source : String,
                     routing_key : String,
                     *,
-                    arguments : Arguments? = nil
+                    arguments : Arguments = Arguments.new
                    ) : Nil
 
   def exchange_unbind(destination : String,
                       source : String,
                       routing_key : String,
                       *,
-                      arguments : Arguments? = nil
+                      arguments : Arguments = Arguments.new
                      ) : Nil
 end
 ```
@@ -471,8 +545,6 @@ class Amqp::Subscription
   # Detached form (spawns one fiber that owns the consumer):
   def spawn_loop(& : DeliverMessage ->) : Nil    -- yields each delivery in a new fiber
 
-  # Observability:
-  def stats : Amqp::SubscriptionStats
 end
 ```
 
@@ -487,9 +559,10 @@ end
   which further `receive` calls raise `Amqp::SubscriptionClosed`).
 - `spawn_loop` is the only public spawn site. Its semantics: spawn one
   fiber that loops `receive`-and-yield until the subscription closes;
-  exceptions from the user block propagate by terminating the fiber
-  AND issuing `basic.reject{requeue: true}` for the offending
-  delivery (matching block-form `consume`).
+  exceptions from the user block terminate that spawned fiber. v0 does
+  not provide an `on_terminate` callback or automatic reject policy for
+  `spawn_loop`; callers that need explicit exception handling should
+  spawn their own loop around `receive`.
 
 ---
 
@@ -585,22 +658,13 @@ alias Amqp::FieldValue =
   String | Bytes | Time | Nil |
   Array(Amqp::FieldValue) | Hash(String, Amqp::FieldValue)
 
-class Amqp::Arguments
-  def initialize
-  def initialize(initial : Hash(String, FieldValue))
-
-  def []=(key : String, value : FieldValue) : Nil
-  def [](key : String) : FieldValue
-  def []?(key : String) : FieldValue?
-  def to_h : Hash(String, FieldValue)
-  def empty? : Bool
-end
+alias Amqp::Arguments = Hash(String, FieldValue)
 ```
 
 - Concrete AMQP field types map deterministically to Crystal types per
   `docs/05-wire-0-9-1/01-types.md`. The shard MUST NOT silently
-  upcast: `Arguments#[]= "x", 1_u8` writes a `short-short-uint`,
-  `Arguments#[]= "x", 1_i32` writes a `long-int`. The caller chooses
+  upcast: `args["x"] = 1_u8` writes a `short-short-uint`,
+  `args["x"] = 1_i32` writes a `long-int`. The caller chooses
   the field type by choosing the Crystal type.
 - Decimal-value (AMQP `D`) is intentionally not supported in v0;
   RabbitMQ and LavinMQ neither produce nor preserve it. If a v0 user
@@ -651,11 +715,13 @@ enum Amqp::Persistence
 end
 ```
 
-### 6.7 `Amqp::ConnectionStats`, `Amqp::ChannelStats`, `Amqp::SubscriptionStats`
+### 6.7 `Amqp::Stats`
 
-Defined in `docs/19-observability.md`. The Connection/Channel/
-Subscription types expose them via `#stats`. Stats are immutable
-snapshots; callers MUST NOT mutate them.
+The current v0 implementation exposes one connection-level
+`Amqp::Stats` counter object. `Stats#snapshot` returns an immutable
+`Amqp::Stats::Snapshot` with publish, confirm, return, consume, and
+recovery counters. The richer `ConnectionStats`, `ChannelStats`, and
+`SubscriptionStats` model in `docs/19-observability.md` is deferred.
 
 ---
 
@@ -718,5 +784,6 @@ be visible to subclasses inside the shard, but they are not part of
 the public API.
 
 **Falsifier:** T-API-SURFACE-001 — a smoke test enumerates every
-public name reachable from the `Amqp` constant and asserts it matches
-the symbol list in this document, no more and no less.
+top-level name reachable from the `Amqp` constant and asserts that the
+visible namespace remains intentional. Supported caller API is still
+the documented subset above.

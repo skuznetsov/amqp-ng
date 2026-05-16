@@ -54,10 +54,10 @@ describe "Amqp::Connection#stats" do
           durable: false, auto_delete: true)
 
         conn.__force_disconnect_for_test
-        deadline = Time.monotonic + 10.seconds
+        deadline = Time.instant + 10.seconds
         loop do
           break if conn.recovered_to_open?
-          fail "recovery did not complete" if Time.monotonic > deadline
+          fail "recovery did not complete" if Time.instant > deadline
           sleep 50.milliseconds
         end
 

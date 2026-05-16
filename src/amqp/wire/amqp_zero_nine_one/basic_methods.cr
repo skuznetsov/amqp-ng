@@ -1,24 +1,27 @@
 require "../../error"
+require "../frame"
 require "./types"
 require "./bit_pack"
 require "./connection_methods"
 
 module Amqp::Wire::AmqpZeroNineOne
-  METHOD_ID_BASIC_QOS          = 10_u16
-  METHOD_ID_BASIC_QOS_OK       = 11_u16
-  METHOD_ID_BASIC_CONSUME      = 20_u16
-  METHOD_ID_BASIC_CONSUME_OK   = 21_u16
-  METHOD_ID_BASIC_CANCEL       = 30_u16
-  METHOD_ID_BASIC_CANCEL_OK    = 31_u16
-  METHOD_ID_BASIC_PUBLISH      = 40_u16
-  METHOD_ID_BASIC_RETURN       = 50_u16
-  METHOD_ID_BASIC_DELIVER      = 60_u16
-  METHOD_ID_BASIC_GET          = 70_u16
-  METHOD_ID_BASIC_GET_OK       = 71_u16
-  METHOD_ID_BASIC_GET_EMPTY    = 72_u16
-  METHOD_ID_BASIC_ACK          = 80_u16
-  METHOD_ID_BASIC_REJECT       = 90_u16
-  METHOD_ID_BASIC_NACK         = 120_u16
+  METHOD_ID_BASIC_QOS        =  10_u16
+  METHOD_ID_BASIC_QOS_OK     =  11_u16
+  METHOD_ID_BASIC_CONSUME    =  20_u16
+  METHOD_ID_BASIC_CONSUME_OK =  21_u16
+  METHOD_ID_BASIC_CANCEL     =  30_u16
+  METHOD_ID_BASIC_CANCEL_OK  =  31_u16
+  METHOD_ID_BASIC_PUBLISH    =  40_u16
+  METHOD_ID_BASIC_RETURN     =  50_u16
+  METHOD_ID_BASIC_DELIVER    =  60_u16
+  METHOD_ID_BASIC_GET        =  70_u16
+  METHOD_ID_BASIC_GET_OK     =  71_u16
+  METHOD_ID_BASIC_GET_EMPTY  =  72_u16
+  METHOD_ID_BASIC_ACK        =  80_u16
+  METHOD_ID_BASIC_REJECT     =  90_u16
+  METHOD_ID_BASIC_RECOVER    = 110_u16
+  METHOD_ID_BASIC_RECOVER_OK = 111_u16
+  METHOD_ID_BASIC_NACK       = 120_u16
 
   module BasicMethods
     extend self
@@ -86,8 +89,9 @@ module Amqp::Wire::AmqpZeroNineOne
 
     struct Cancel
       getter consumer_tag : String
+      getter no_wait : Bool
 
-      def initialize(@consumer_tag)
+      def initialize(@consumer_tag, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -102,8 +106,8 @@ module Amqp::Wire::AmqpZeroNineOne
       def self.read(io : IO) : self
         # Server-initiated cancel: consumer-tag + no-wait
         tag = Types.read_shortstr(io)
-        io.read_byte # no-wait, ignore
-        new(tag)
+        b = io.read_byte || raise Amqp::ProtocolError.new("eof in basic.cancel")
+        new(tag, (b & 0x01) != 0)
       end
     end
 
@@ -130,8 +134,9 @@ module Amqp::Wire::AmqpZeroNineOne
       getter exchange : String
       getter routing_key : String
       getter mandatory : Bool
+      getter immediate : Bool
 
-      def initialize(@exchange, @routing_key, @mandatory)
+      def initialize(@exchange, @routing_key, @mandatory, @immediate = false)
       end
 
       def to_payload : Bytes
@@ -141,9 +146,40 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian) # reserved-1
         Types.write_shortstr(io, @exchange)
         Types.write_shortstr(io, @routing_key)
-        BitPack.write(io, [@mandatory, false]) # immediate=false
+        BitPack.write(io, [@mandatory, @immediate])
         io.to_slice
       end
+    end
+
+    def write_publish_frame(io : IO,
+                            channel : UInt16,
+                            exchange : String,
+                            routing_key : String,
+                            mandatory : Bool,
+                            immediate : Bool = false) : Nil
+      exchange_bytes = exchange.to_slice
+      routing_key_bytes = routing_key.to_slice
+      if exchange_bytes.size > 255
+        raise Amqp::ConfigurationError.new("shortstr length #{exchange_bytes.size} exceeds 255")
+      end
+      if routing_key_bytes.size > 255
+        raise Amqp::ConfigurationError.new("shortstr length #{routing_key_bytes.size} exceeds 255")
+      end
+
+      payload_size = 9 + exchange_bytes.size + routing_key_bytes.size
+      Frame.write_prefix(io, FrameType::Method, channel, payload_size)
+      io.write_bytes(CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(METHOD_ID_BASIC_PUBLISH, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+      io.write_byte(exchange_bytes.size.to_u8)
+      io.write(exchange_bytes) if exchange_bytes.size > 0
+      io.write_byte(routing_key_bytes.size.to_u8)
+      io.write(routing_key_bytes) if routing_key_bytes.size > 0
+      bits = 0_u8
+      bits |= 1_u8 if mandatory
+      bits |= 2_u8 if immediate
+      io.write_byte(bits)
+      io.write_byte(Amqp::Wire::FRAME_END)
     end
 
     struct Return
@@ -183,6 +219,51 @@ module Amqp::Wire::AmqpZeroNineOne
         ex = Types.read_shortstr(io)
         rk = Types.read_shortstr(io)
         new(tag, dtag, rd, ex, rk)
+      end
+    end
+
+    struct Get
+      getter queue : String
+      getter no_ack : Bool
+
+      def initialize(@queue, @no_ack)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_BASIC_GET, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+        Types.write_shortstr(io, @queue)
+        BitPack.write(io, [@no_ack])
+        io.to_slice
+      end
+    end
+
+    struct GetOk
+      getter delivery_tag : UInt64
+      getter redelivered : Bool
+      getter exchange : String
+      getter routing_key : String
+      getter message_count : UInt32
+
+      def initialize(@delivery_tag, @redelivered, @exchange, @routing_key, @message_count)
+      end
+
+      def self.read(io : IO) : self
+        dtag = io.read_bytes(UInt64, IO::ByteFormat::NetworkEndian)
+        b = io.read_byte || raise Amqp::ProtocolError.new("eof in basic.get-ok")
+        ex = Types.read_shortstr(io)
+        rk = Types.read_shortstr(io)
+        count = io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian)
+        new(dtag, (b & 0x01) != 0, ex, rk, count)
+      end
+    end
+
+    struct GetEmpty
+      def self.read(io : IO) : self
+        Types.read_shortstr(io) # reserved-1
+        new
       end
     end
 
@@ -247,6 +328,27 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(@delivery_tag, IO::ByteFormat::NetworkEndian)
         BitPack.write(io, [@requeue])
         io.to_slice
+      end
+    end
+
+    struct Recover
+      getter requeue : Bool
+
+      def initialize(@requeue)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_BASIC_RECOVER, IO::ByteFormat::NetworkEndian)
+        BitPack.write(io, [@requeue])
+        io.to_slice
+      end
+    end
+
+    struct RecoverOk
+      def self.read(io : IO) : self
+        new
       end
     end
   end

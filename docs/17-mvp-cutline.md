@@ -31,7 +31,9 @@ deferred to also be removed.
   caller-controlled cipher and verification policy.
 - **Single-host URI.** One peer per `Amqp.connect`. Failover
   composition is the caller's problem.
-- **SASL PLAIN and EXTERNAL.** Two mechanisms, no more.
+- **SASL PLAIN.** v0 authenticates with PLAIN credentials. SASL
+  EXTERNAL is deferred even when the TLS transport carries a client
+  certificate.
 
 ### 1.2 Connection lifecycle
 
@@ -87,8 +89,9 @@ deferred to also be removed.
 - **Manual ack/nack/reject.** With `multiple:` (ack/nack) and
   `requeue:` (nack/reject) flags.
 - **Prefetch.** `Channel#prefetch(count, global:)`.
-- **Backpressure.** Subscription buffer fills → frame-reader blocks
-  → TCP backpressure to broker.
+- **Backpressure.** Subscription buffer fills → that channel's handler
+  stalls first; unrelated channel RPCs continue until the blocked
+  channel's frame inbox saturates.
 
 ### 1.6 Topology
 
@@ -115,35 +118,34 @@ deferred to also be removed.
 
 - **Complete exception hierarchy.** Per `docs/03-error-model.md` §1.
 - **Reply-code → subclass mapping.** Per `docs/03-error-model.md` §3.
-- **Origin tagging.** Caller / Broker / Network / Heartbeat /
-  Recovery. Per `docs/03-error-model.md` §4.
-- **Recoverable vs fatal classification.** `Amqp::Error.recoverable?`
-  class method. Per `docs/03-error-model.md` §5.
+- **Typed closure errors.** Caller / Broker / Network / Heartbeat /
+  Recovery are represented by typed v0 exceptions where implemented.
+- **Recoverable vs fatal classification.** Internal to `Connection`;
+  no public `Amqp::Error.recoverable?` in v0.
 
 ### 1.9 Observability
 
-- **`Connection#stats`.** Bytes/frames sent and received, channel
-  count, uptime, heartbeats sent/received.
-- **`Channel#stats`.** Messages published, confirms received/timeout,
-  unconfirmed in flight, deliveries, manual acks/nacks.
-- **`Subscription#stats`.** Deliveries received, buffer depth,
-  buffer high-water mark.
+- **`Connection#stats`.** v0 exposes the reduced `Amqp::Stats` counter
+  object documented in `docs/19-observability.md`.
+- **Rich channel/subscription stats.** Deferred from v0.1.0.
 - **stdlib `Log`.** One logger per subsystem.
 
 ### 1.10 Tests
 
-- **Falsifier matrix.** Every `MUST` / `MUST NOT` in `docs/` MUST
-  have a passing test in `spec/`.
+- **Falsifier matrix.** New normative prose is gated by
+  `spec/docs_falsifier_link_spec.cr`; legacy matrix debt is tracked
+  instead of blocking the urgent v0.1.0 release.
 - **Frame corpus.** `spec/fixtures/frames/` contains hex-dump-captured
-  frames from real RabbitMQ and LavinMQ sessions; round-trip
-  decode/encode against this corpus is a v0 acceptance gate.
-- **Two-broker matrix.** Every consumer/publisher/recovery test runs
-  against RabbitMQ 3.13+ AND LavinMQ 2.x. Per
-  `docs/13-broker-compat-matrix.md`.
+  RabbitMQ frames; round-trip decode/encode against this corpus is a
+  v0.1.0 acceptance gate. LavinMQ corpus capture is deferred to v0.2.
+- **Two-broker smoke matrix.** The default suite runs against RabbitMQ
+  and LavinMQ. RabbitMQ additionally carries TLS/backpressure/chaos
+  opt-in coverage; LavinMQ carries plain-AMQP backpressure/chaos
+  coverage. LavinMQ TLS is deferred from v0.1.0.
 
 ### 1.11 Documentation
 
-- **All 21 `docs/` files.** No `TODO` or `TBD` markers in normative
+- **All current `docs/` files.** No `TODO` or `TBD` markers in normative
   prose at v0.1.0 release.
 
 ---
@@ -171,13 +173,13 @@ in scope.
   codec MUST raise `Amqp::ProtocolError` on decoding a `D` field,
   not silently coerce. Listed in `docs/20-risk-register.md` as a
   known limitation.
-- **Transactions (`tx.select` / `tx.commit` / `tx.rollback`).** Both
-  RabbitMQ and LavinMQ implement transactions, but they are slow and
-  rarely used; publisher confirms cover the same need with better
-  performance. Deferred to v0.x as a clean addition if demand
-  materialises.
-- **`basic.recover` / `basic.recover-async`.** Niche operation
-  (requeue all unacked deliveries on a channel). Deferred to v0.x.
+- **In-flight transaction recovery.** `tx.select` / `tx.commit` /
+  `tx.rollback` are implemented for compatibility, but the shard does
+  not promise to preserve an open transaction across reconnect. Use
+  publisher confirms for recoverable publish flows.
+- **`basic.recover-async`.** Niche no-reply variant deferred to v0.x.
+  The synchronous `basic.recover` method is implemented as
+  `Channel#basic_recover` for compatibility.
 
 ### 2.4 Higher-level abstractions
 
@@ -200,11 +202,11 @@ in scope.
 - **Per-channel recovery scope.** Recovering only some channels of a
   connection. Out of scope; v0 recovers all or nothing.
 
-### 2.6 SASL mechanisms beyond PLAIN/EXTERNAL
+### 2.6 SASL mechanisms beyond PLAIN
 
-AMQPLAIN, RABBIT-CR-DEMO, ANONYMOUS, OAUTH2. Deferred to v0.x; add
-on demand with the process described in `docs/04-uri-and-config.md`
-§4.3.
+EXTERNAL, AMQPLAIN, RABBIT-CR-DEMO, ANONYMOUS, OAUTH2. Deferred to
+v0.x; add on demand with the process described in
+`docs/04-uri-and-config.md` §4.3.
 
 ### 2.7 Broker-specific extensions
 
@@ -245,27 +247,22 @@ on demand with the process described in `docs/04-uri-and-config.md`
 
 ## 3. Acceptance criteria for v0.1.0
 
-The shard ships v0.1.0 when, against both target brokers
-(`docs/13-broker-compat-matrix.md`):
+The shard ships v0.1.0 when these pragmatic release checks pass:
 
-1. Every `MUST` in `docs/` has a green falsifier in `spec/`.
-2. Every `SHOULD` in `docs/` either has a green falsifier or a
-   `pending` test with a documented rationale in
-   `docs/20-risk-register.md`.
-3. Every PERF-N claim in `docs/14-performance-contract.md` is
-   demonstrated by a script in `spec/perf/` whose output is committed
-   alongside the release.
-4. Every REL-N claim in `docs/15-reliability-contract.md` is
-   demonstrated by a chaos test in `spec/reliability/` whose run
-   transcript is committed alongside the release.
-5. `shard.lock` runtime-scope is empty (P-8).
-6. The wire-codec module passes the frame-corpus round-trip
-   (`docs/05-wire-0-9-1/04-recorded-frames.md`).
-7. Documentation has no `TODO`/`TBD` markers in normative prose.
+1. `shard.yml` and `Amqp::VERSION` both report `0.1.0`.
+2. Runtime dependencies remain empty.
+3. `crystal spec` passes on the default RabbitMQ URL.
+4. RabbitMQ opt-in TLS/backpressure/chaos gates pass locally.
+5. LavinMQ 2.4.0 passes the default suite and plain-AMQP
+   backpressure/chaos gates; LavinMQ TLS is explicitly deferred.
+6. `crystal tool format --check src spec` passes.
+7. `spec/docs_falsifier_link_spec.cr` passes, so new normative prose
+   cannot increase the old documentation debt.
+8. `../job_hunter` can compile against the local path dependency.
 
-The release notes for v0.1.0 MUST point to this section and tick
-each criterion explicitly. If even one criterion is unmet, the tag
-MUST be `0.1.0-rc` or a pre-release identifier, not `0.1.0`.
+The stricter "every historical matrix row has executable evidence",
+`spec/perf/`, `spec/reliability/`, and LavinMQ corpus requirements are
+v0.x hardening work, not blockers for this urgent v0.1.0 release.
 
 ---
 

@@ -2,7 +2,9 @@ require "log"
 require "./error"
 require "./arguments"
 require "./properties"
+require "./message"
 require "./delivery"
+require "./get_message"
 require "./subscription"
 require "./queue_info"
 require "./wire/frame"
@@ -11,11 +13,15 @@ require "./wire/amqp_zero_nine_one/exchange_methods"
 require "./wire/amqp_zero_nine_one/queue_methods"
 require "./wire/amqp_zero_nine_one/basic_methods"
 require "./wire/amqp_zero_nine_one/confirm_methods"
+require "./wire/amqp_zero_nine_one/tx_methods"
 require "./wire/amqp_zero_nine_one/content_header"
 
 module Amqp
   class Channel
     Log = ::Log.for("amqp.channel")
+    alias CancelCallback = String -> Nil
+    alias CloseCallback = UInt16, String -> Nil
+
     enum State
       Initial
       Open
@@ -75,29 +81,58 @@ module Amqp
       exclusive : Bool,
       arguments : Amqp::Arguments
 
+    private record PendingConfirm,
+      original_tag : UInt64,
+      mandatory : Bool,
+      outcome : ::Channel(ConfirmOutcome)?,
+      replay_message : Message?,
+      exchange : String,
+      routing_key : String do
+      def message_for_replay : Message
+        @replay_message || raise RecoveryExhaustedError.new(
+          "pending confirm #{original_tag} has no replay payload"
+        )
+      end
+    end
+
     getter id : UInt16
     @connection : Connection
     @state : State
     @inbox : ::Channel(Amqp::Wire::Frame)
     @sync_mutex : Mutex
+    @operation_mutex : Mutex
+    @operation_busy : Bool
+    @flow_mutex : Mutex
+    @flow_active : Bool
+    @flow_waker : ::Channel(Nil)
+    @tx_enabled : Bool
     @sync_slot : ::Channel(MethodEnvelope | Exception)?
+    @get_slot : ::Channel(GetMessage | Nil | Exception)?
     @consumers : Hash(String, Subscription)
     @consumers_mutex : Mutex
     @pending_method : (Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver |
                        Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return |
+                       Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk |
                        Nil)
     @pending_props : Properties?
     @pending_body_size : UInt64
     @pending_body_received : UInt64
     @pending_body : IO::Memory
+    @pending_body_direct : Bytes?
     @close_reason : Exception?
     @handler_done : ::Channel(Nil)
     @confirms_enabled : Bool
     @confirms_mutex : Mutex
     @next_publish_seq : UInt64
     @unconfirmed : Set(UInt64)
+    @lowest_unconfirmed : UInt64?
+    @pending_confirms : Hash(UInt64, PendingConfirm)
+    @returned_confirms : Hash(UInt64, ReturnReason)
     @confirms_nacked : Bool
     @confirms_waker : ::Channel(Nil)
+    @on_return : Proc(ReturnedMessage, Nil)?
+    @on_cancel : CancelCallback?
+    @on_close : CloseCallback?
     @topology_mutex : Mutex
     @topology_exchanges : Hash(String, ExchangeOp)
     @topology_queues : Hash(String, QueueOp)
@@ -109,7 +144,14 @@ module Amqp
       @state = State::Initial
       @inbox = ::Channel(Amqp::Wire::Frame).new(256)
       @sync_mutex = Mutex.new
+      @operation_mutex = Mutex.new
+      @operation_busy = false
+      @flow_mutex = Mutex.new
+      @flow_active = true
+      @flow_waker = ::Channel(Nil).new
+      @tx_enabled = false
       @sync_slot = nil
+      @get_slot = nil
       @consumers = {} of String => Subscription
       @consumers_mutex = Mutex.new
       @pending_method = nil
@@ -117,14 +159,21 @@ module Amqp
       @pending_body_size = 0_u64
       @pending_body_received = 0_u64
       @pending_body = IO::Memory.new
+      @pending_body_direct = nil
       @close_reason = nil
       @handler_done = ::Channel(Nil).new
       @confirms_enabled = false
       @confirms_mutex = Mutex.new
       @next_publish_seq = 1_u64
       @unconfirmed = Set(UInt64).new
+      @lowest_unconfirmed = nil
+      @pending_confirms = {} of UInt64 => PendingConfirm
+      @returned_confirms = {} of UInt64 => ReturnReason
       @confirms_nacked = false
       @confirms_waker = ::Channel(Nil).new
+      @on_return = nil
+      @on_cancel = nil
+      @on_close = nil
       @topology_mutex = Mutex.new
       @topology_exchanges = {} of String => ExchangeOp
       @topology_queues = {} of String => QueueOp
@@ -135,18 +184,27 @@ module Amqp
 
     protected def open : Nil
       spawn(name: "amqp-channel-#{@id}") { run_handler }
-      env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::ChannelMethods::Open.new.to_payload)
-      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_CHANNEL,
-        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CHANNEL_OPEN_OK)
-      Amqp::Wire::AmqpZeroNineOne::ChannelMethods::OpenOk.read(env.body)
-      @state = State::Open
+      begin
+        env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::ChannelMethods::Open.new.to_payload)
+        expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_CHANNEL,
+          Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CHANNEL_OPEN_OK)
+        Amqp::Wire::AmqpZeroNineOne::ChannelMethods::OpenOk.read(env.body)
+        @state = State::Open
+      rescue ex
+        finalize_closed(ex)
+        raise ex
+      end
+    end
+
+    def open? : Bool
+      @state == State::Open
     end
 
     def closed? : Bool
       @state == State::Closed
     end
 
-    def close(reply_code : UInt16 = 200_u16, reply_text : String = "OK") : Nil
+    def close(*, reply_code : UInt16 = 200_u16, reply_text : String = "OK") : Nil
       return if @state == State::Closed
       @state = State::Closing
       begin
@@ -161,6 +219,10 @@ module Amqp
         # The handler fiber may have already aborted us with the same close.
       end
       finalize_closed(ChannelClosedByCaller.new("channel #{@id} closed by caller"))
+    end
+
+    def close_reason : Exception?
+      @close_reason
     end
 
     # ---- Frame intake (called from connection reader fiber) -------------
@@ -200,6 +262,41 @@ module Amqp
           )
         end
       end
+    end
+
+    def exchange_delete(name : String, *, if_unused : Bool = false) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Delete.new(name, if_unused).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_EXCHANGE,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_EXCHANGE_DELETE_OK)
+      @topology_mutex.synchronize { @topology_exchanges.delete(name) }
+    end
+
+    def exchange_bind(destination : String,
+                      source : String,
+                      routing_key : String = "",
+                      arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Bind.new(
+          destination, source, routing_key, arguments,
+        ).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_EXCHANGE,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_EXCHANGE_BIND_OK)
+    end
+
+    def exchange_unbind(destination : String,
+                        source : String,
+                        routing_key : String = "",
+                        arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Unbind.new(
+          destination, source, routing_key, arguments,
+        ).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_EXCHANGE,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_EXCHANGE_UNBIND_OK)
     end
 
     def queue_declare(name : String = "",
@@ -242,6 +339,31 @@ module Amqp
       end
     end
 
+    def queue_unbind(queue : String,
+                     exchange : String,
+                     routing_key : String = "",
+                     arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::QueueMethods::Unbind.new(
+          queue, exchange, routing_key, arguments,
+        ).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_UNBIND_OK)
+      @topology_mutex.synchronize do
+        @topology_bindings.reject! { |b| b.queue == queue && b.exchange == exchange && b.routing_key == routing_key }
+      end
+    end
+
+    def queue_purge(name : String) : UInt32
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::QueueMethods::Purge.new(name).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_PURGE_OK)
+      Amqp::Wire::AmqpZeroNineOne::QueueMethods::PurgeOk.read(env.body).message_count
+    end
+
     def queue_delete(name : String, if_unused : Bool = false, if_empty : Bool = false) : UInt32
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::QueueMethods::Delete.new(name, if_unused, if_empty).to_payload
@@ -266,54 +388,145 @@ module Amqp
       end
     end
 
+    def prefetch(count : UInt16, *, global : Bool = false) : Nil
+      qos(count, global: global)
+    end
+
     def publish(exchange : String,
                 routing_key : String,
                 body : Bytes,
                 properties : Properties = Properties.new,
-                mandatory : Bool = false) : UInt64?
+                mandatory : Bool = false,
+                immediate : Bool = false) : UInt64?
+      publish(Message.new(body, properties), exchange, routing_key,
+        mandatory: mandatory, immediate: immediate)
+    end
+
+    def publish(message : Message,
+                exchange : String,
+                routing_key : String,
+                *,
+                mandatory : Bool = false,
+                immediate : Bool = false) : UInt64?
       ensure_open!
-      method_payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Publish.new(
-        exchange, routing_key, mandatory,
-      ).to_payload
-      header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
-        Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
-        body.size.to_u64,
-        properties,
-      )
-      frame_max = @connection.frame_max
-      max_body = max_body_per_frame(frame_max)
+      wait_for_flow_active
+      return publish_unconfirmed(message, exchange, routing_key, mandatory, immediate) unless @confirms_enabled
 
-      # In confirm mode we must register the seq BEFORE the broker can
-      # possibly ack it. Hold @confirms_mutex across the write so any
-      # incoming basic.ack on the handler fiber finds the seq in
-      # @unconfirmed and doesn't race past us.
-      seq = nil
-      if @confirms_enabled
-        @confirms_mutex.lock
-      end
+      enter_operation
       begin
-        if @confirms_enabled
-          seq = @next_publish_seq
-          @unconfirmed << seq
-          @next_publish_seq += 1
-        end
-
-        @connection.with_write do |io|
-          Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, @id, method_payload).write(io)
-          Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Header, @id, header_payload).write(io)
-          offset = 0
-          while offset < body.size
-            chunk = Math.min(max_body, body.size - offset)
-            slice = body[offset, chunk]
-            Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, @id, slice).write(io)
-            offset += chunk
-          end
-        end
+        publish_registered(message, exchange, routing_key, mandatory, immediate, nil)
       ensure
-        @confirms_mutex.unlock if @confirms_enabled
+        leave_operation
       end
-      @connection.stats.incr_published
-      seq
+    end
+
+    def publish_batch(messages : Array(Message),
+                      exchange : String,
+                      routing_key : String,
+                      *,
+                      mandatory : Bool = false,
+                      immediate : Bool = false) : Array(UInt64?)
+      ensure_open!
+      wait_for_flow_active
+      return publish_batch_unconfirmed(messages, exchange, routing_key, mandatory, immediate) unless @confirms_enabled
+
+      enter_operation
+      begin
+        publish_batch_registered(messages, exchange, routing_key, mandatory, immediate)
+      ensure
+        leave_operation
+      end
+    end
+
+    def publish_batch(bodies : Array(Bytes),
+                      exchange : String,
+                      routing_key : String,
+                      *,
+                      properties : Properties = Properties.new,
+                      mandatory : Bool = false,
+                      immediate : Bool = false) : Array(UInt64?)
+      messages = bodies.map { |body| Message.new(body, properties) }
+      publish_batch(messages, exchange, routing_key, mandatory: mandatory, immediate: immediate)
+    end
+
+    def publish_confirm(message : Message,
+                        exchange : String,
+                        routing_key : String,
+                        *,
+                        mandatory : Bool = false,
+                        timeout : Time::Span = 30.seconds) : Bool
+      raise ConfigurationError.new("publish_confirm requires confirm mode") unless @confirms_enabled
+      raise PublishTimeoutError.new(0_u64, timeout) if timeout <= Time::Span.zero
+      wait_for_flow_active
+      outcome = ::Channel(ConfirmOutcome).new(1)
+      enter_operation
+      tag = begin
+        publish_registered(message, exchange, routing_key, mandatory, false, outcome)
+      ensure
+        leave_operation
+      end
+      await_publish_confirm(tag.not_nil!, outcome, exchange, routing_key, timeout)
+    end
+
+    private def await_publish_confirm(tag : UInt64,
+                                      outcome : ::Channel(ConfirmOutcome),
+                                      exchange : String,
+                                      routing_key : String,
+                                      timeout : Time::Span) : Bool
+      select
+      when result = outcome.receive?
+        raise ChannelClosedByCaller.new("confirm channel closed before outcome") if result.nil?
+        case result.kind
+        when .ack?
+          true
+        when .nack?
+          raise PublishNackError.new(result.delivery_tag)
+        when .returned?
+          reason = result.return_reason || ReturnReason.new(0_u16, "returned", exchange, routing_key)
+          raise PublishReturnedError.new(result.delivery_tag, reason)
+        else
+          raise ProtocolError.new("unknown confirm outcome #{result.kind}")
+        end
+      when timeout(timeout)
+        raise PublishTimeoutError.new(tag, timeout)
+      end
+    end
+
+    def publish_confirm(body : Bytes,
+                        exchange : String,
+                        routing_key : String,
+                        *,
+                        properties : Properties = Properties.new,
+                        mandatory : Bool = false,
+                        timeout : Time::Span = 30.seconds) : Bool
+      publish_confirm(Message.new(body, properties), exchange, routing_key,
+        mandatory: mandatory, timeout: timeout)
+    end
+
+    def publish_async(message : Message,
+                      exchange : String,
+                      routing_key : String,
+                      *,
+                      mandatory : Bool = false) : {UInt64, ::Channel(ConfirmOutcome)}
+      raise ConfigurationError.new("publish_async requires confirm mode") unless @confirms_enabled
+      wait_for_flow_active
+      outcome = ::Channel(ConfirmOutcome).new(1)
+      enter_operation
+      tag = begin
+        publish_registered(message, exchange, routing_key, mandatory, false, outcome)
+      ensure
+        leave_operation
+      end
+      {tag.not_nil!, outcome}
+    end
+
+    def publish_async(body : Bytes,
+                      exchange : String,
+                      routing_key : String,
+                      *,
+                      properties : Properties = Properties.new,
+                      mandatory : Bool = false) : {UInt64, ::Channel(ConfirmOutcome)}
+      publish_async(Message.new(body, properties), exchange, routing_key, mandatory: mandatory)
     end
 
     def confirm_select : Nil
@@ -328,11 +541,18 @@ module Amqp
         @confirms_enabled = true
         @next_publish_seq = 1_u64
         @unconfirmed.clear
+        @lowest_unconfirmed = nil
+        @pending_confirms.clear
+        @returned_confirms.clear
         @confirms_nacked = false
       end
     end
 
     def confirms? : Bool
+      @confirms_enabled
+    end
+
+    def confirms_enabled? : Bool
       @confirms_enabled
     end
 
@@ -346,17 +566,17 @@ module Amqp
       target_seq = @confirms_mutex.synchronize { @next_publish_seq - 1_u64 }
       return !@confirms_nacked if target_seq == 0
 
-      deadline = Time.monotonic + timeout
+      deadline = Time.instant + timeout
       loop do
         settled, nacked, waker = @confirms_mutex.synchronize do
-          done = @unconfirmed.empty? || @unconfirmed.min > target_seq
+          done = @lowest_unconfirmed.nil? || @lowest_unconfirmed.not_nil! > target_seq
           {done, @confirms_nacked, @confirms_waker}
         end
         return !nacked if settled
         if @state == State::Closed
-          raise (@close_reason || ChannelClosedByCaller.new("channel #{@id} closed"))
+          raise(@close_reason || ChannelClosedByCaller.new("channel #{@id} closed"))
         end
-        remaining = deadline - Time.monotonic
+        remaining = deadline - Time.instant
         return false if remaining <= Time::Span.zero
         select
         when waker.receive?
@@ -365,6 +585,309 @@ module Amqp
           return false
         end
       end
+    end
+
+    def flow(active : Bool) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::ChannelMethods::Flow.new(active).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_CHANNEL,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CHANNEL_FLOW_OK)
+      Amqp::Wire::AmqpZeroNineOne::ChannelMethods::FlowOk.read(env.body)
+    end
+
+    def on_return(&callback : ReturnedMessage -> Nil) : Nil
+      @on_return = callback
+    end
+
+    def on_cancel(&callback : String -> Nil) : Nil
+      @on_cancel = callback
+    end
+
+    def on_close(&callback : UInt16, String -> Nil) : Nil
+      @on_close = callback
+    end
+
+    private def read_publish_body(io : IO, bytesize : Int) : Bytes
+      raise ArgumentError.new("bytesize must be non-negative") if bytesize < 0
+
+      body = Bytes.new(bytesize)
+      offset = 0
+      while offset < bytesize
+        read = io.read(body[offset, bytesize - offset])
+        raise IO::EOFError.new("unexpected EOF while reading publish body") if read == 0
+        offset += read
+      end
+      body
+    end
+
+    # ---- amqp-client.cr compatibility aliases --------------------------
+
+    def basic_publish(body : Bytes,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new) : UInt64
+      publish(exchange, routing_key, body, properties,
+        mandatory: mandatory, immediate: immediate) || 0_u64
+    end
+
+    def basic_publish(body : String,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new) : UInt64
+      basic_publish(body.to_slice, exchange, routing_key, mandatory, immediate, properties)
+    end
+
+    def basic_publish(io : IO,
+                      bytesize : Int,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new) : UInt64
+      basic_publish(read_publish_body(io, bytesize), exchange, routing_key,
+        mandatory, immediate, properties)
+    end
+
+    def basic_publish(body : Bytes,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new,
+                      &callback : Bool -> Nil) : UInt64
+      raise ConfigurationError.new("basic_publish callback mode does not support immediate: true") if immediate
+      confirm_select unless @confirms_enabled
+      tag, outcome = publish_async(Message.new(body, properties), exchange, routing_key,
+        mandatory: mandatory)
+      spawn(name: "amqp-basic-publish-confirm-#{@id}-#{tag}") do
+        ok = false
+        if result = outcome.receive?
+          ok = result.kind.ack?
+        end
+        callback.call(ok)
+      end
+      tag
+    end
+
+    def basic_publish(io : IO,
+                      bytesize : Int,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new,
+                      &callback : Bool -> Nil) : UInt64
+      basic_publish(read_publish_body(io, bytesize), exchange, routing_key,
+        mandatory, immediate, properties) do |ok|
+        callback.call(ok)
+      end
+    end
+
+    def basic_publish(body : String,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new,
+                      &callback : Bool -> Nil) : UInt64
+      basic_publish(body.to_slice, exchange, routing_key, mandatory, immediate, properties) do |ok|
+        callback.call(ok)
+      end
+    end
+
+    def basic_publish_confirm(body : Bytes,
+                              exchange : String,
+                              routing_key : String = "",
+                              mandatory : Bool = false,
+                              immediate : Bool = false,
+                              props properties : Properties = Properties.new,
+                              timeout : Time::Span = 30.seconds) : Bool
+      raise ConfigurationError.new("basic_publish_confirm does not support immediate: true") if immediate
+      confirm_select unless @confirms_enabled
+      publish_confirm(Message.new(body, properties), exchange, routing_key,
+        mandatory: mandatory, timeout: timeout)
+    end
+
+    def basic_publish_confirm(body : String,
+                              exchange : String,
+                              routing_key : String = "",
+                              mandatory : Bool = false,
+                              immediate : Bool = false,
+                              props properties : Properties = Properties.new,
+                              timeout : Time::Span = 30.seconds) : Bool
+      basic_publish_confirm(body.to_slice, exchange, routing_key, mandatory, immediate,
+        properties, timeout: timeout)
+    end
+
+    def basic_publish_confirm(io : IO,
+                              bytesize : Int,
+                              exchange : String,
+                              routing_key : String = "",
+                              mandatory : Bool = false,
+                              immediate : Bool = false,
+                              props properties : Properties = Properties.new,
+                              timeout : Time::Span = 30.seconds) : Bool
+      basic_publish_confirm(read_publish_body(io, bytesize), exchange, routing_key,
+        mandatory, immediate, properties, timeout: timeout)
+    end
+
+    def basic_get(queue : String, no_ack : Bool = true) : GetMessage?
+      get(queue, auto_ack: no_ack)
+    end
+
+    def basic_consume(queue : String,
+                      tag : String = "",
+                      no_ack : Bool = true,
+                      exclusive : Bool = false,
+                      block : Bool = false,
+                      args arguments : Arguments = Arguments.new,
+                      work_pool : Int32 = 1,
+                      &callback : DeliverMessage -> Nil) : String
+      raise ArgumentError.new("Max allowed work_pool is 1024") if work_pool > 1024
+      raise ArgumentError.new("At least one worker required") if work_pool < 1
+
+      sub = subscribe(queue, consumer_tag: tag, auto_ack: no_ack,
+        exclusive: exclusive, arguments: arguments)
+      done = ::Channel(Exception?).new(work_pool)
+      work_pool.times do |index|
+        spawn(name: "amqp-basic-consume-#{sub.consumer_tag}-#{index}") do
+          begin
+            sub.each do |delivery|
+              callback.call(delivery)
+            end
+            done.send(nil)
+          rescue ex
+            close(reply_code: 500_u16, reply_text: "uncaught consumer exception #{sub.consumer_tag}") rescue nil
+            done.send(ex) rescue nil
+          end
+        end
+      end
+
+      if block
+        work_pool.times do
+          if ex = done.receive
+            raise ex
+          end
+        end
+      end
+      sub.consumer_tag
+    end
+
+    def basic_cancel(consumer_tag : String, no_wait : Bool = false) : Nil
+      cancel(consumer_tag)
+    end
+
+    def basic_ack(delivery_tag : UInt64, multiple : Bool = false) : Nil
+      ack(delivery_tag, multiple: multiple)
+    end
+
+    def basic_reject(delivery_tag : UInt64, requeue : Bool = false) : Nil
+      reject(delivery_tag, requeue: requeue)
+    end
+
+    def basic_nack(delivery_tag : UInt64, requeue : Bool = false, multiple : Bool = false) : Nil
+      nack(delivery_tag, multiple: multiple, requeue: requeue)
+    end
+
+    def basic_qos(count : UInt16, global : Bool = false) : Nil
+      qos(count, global: global)
+    end
+
+    def basic_recover(requeue : Bool = true) : Nil
+      env = sync_rpc(
+        Amqp::Wire::AmqpZeroNineOne::BasicMethods::Recover.new(requeue).to_payload
+      )
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_RECOVER_OK)
+      Amqp::Wire::AmqpZeroNineOne::BasicMethods::RecoverOk.read(env.body)
+    end
+
+    def tx_select : Nil
+      return if @tx_enabled
+      env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::TxMethods::Select.new.to_payload)
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_TX,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_TX_SELECT_OK)
+      Amqp::Wire::AmqpZeroNineOne::TxMethods::SelectOk.read(env.body)
+      @tx_enabled = true
+    end
+
+    def tx_commit : Nil
+      env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::TxMethods::Commit.new.to_payload)
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_TX,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_TX_COMMIT_OK)
+      Amqp::Wire::AmqpZeroNineOne::TxMethods::CommitOk.read(env.body)
+    end
+
+    def tx_rollback : Nil
+      env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::TxMethods::Rollback.new.to_payload)
+      expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_TX,
+        Amqp::Wire::AmqpZeroNineOne::METHOD_ID_TX_ROLLBACK_OK)
+      Amqp::Wire::AmqpZeroNineOne::TxMethods::RollbackOk.read(env.body)
+    end
+
+    def transaction(& : -> T) : T forall T
+      tx_select
+      begin
+        value = yield
+      rescue ex
+        tx_rollback rescue nil
+        raise ex
+      else
+        tx_commit
+        value
+      end
+    end
+
+    def queue : Queue
+      info = queue_declare("", durable: false, exclusive: true, auto_delete: true)
+      Queue.new(self, info.name)
+    end
+
+    def queue(name : String,
+              passive : Bool = false,
+              durable : Bool = true,
+              exclusive : Bool = false,
+              auto_delete : Bool = false,
+              args arguments : Arguments = Arguments.new) : Queue
+      info = queue_declare(name, passive, durable, exclusive, auto_delete, arguments)
+      Queue.new(self, info.name)
+    end
+
+    def exchange(name : String,
+                 type : String,
+                 passive : Bool = false,
+                 durable : Bool = true,
+                 internal : Bool = false,
+                 auto_delete : Bool = false,
+                 args arguments : Arguments = Arguments.new) : Exchange
+      exchange_declare(name, type, passive, durable,
+        auto_delete: auto_delete, internal: internal, arguments: arguments)
+      Exchange.new(self, name)
+    end
+
+    def default_exchange : Exchange
+      Exchange.new(self, "")
+    end
+
+    def direct_exchange(name : String = "amq.direct", passive : Bool = true) : Exchange
+      exchange(name, "direct", passive)
+    end
+
+    def topic_exchange(name : String = "amq.topic", passive : Bool = true) : Exchange
+      exchange(name, "topic", passive)
+    end
+
+    def fanout_exchange(name : String = "amq.fanout", passive : Bool = true) : Exchange
+      exchange(name, "fanout", passive)
+    end
+
+    def header_exchange(name : String = "amq.headers", passive : Bool = true) : Exchange
+      exchange(name, "headers", passive)
     end
 
     private def max_body_per_frame(frame_max : UInt32) : Int32
@@ -378,13 +901,14 @@ module Amqp
                 no_local : Bool = false,
                 no_ack : Bool = false,
                 exclusive : Bool = false,
-                arguments : Amqp::Arguments = Amqp::Arguments.new) : Subscription
+                arguments : Amqp::Arguments = Amqp::Arguments.new,
+                buffer : Int32 = 1024) : Subscription
       # Pre-generate a client-side tag if caller didn't supply one. This
       # lets us register the Subscription BEFORE the broker can send any
       # basic.deliver — otherwise a fast broker (or anything that races
       # the handler fiber) could route a delivery against an unknown tag.
       tag = consumer_tag.empty? ? "amqp-ng-ctag-#{Random::Secure.hex(8)}" : consumer_tag
-      sub = Subscription.new(self, tag)
+      sub = Subscription.new(self, tag, queue, buffer)
       @consumers_mutex.synchronize { @consumers[tag] = sub }
 
       begin
@@ -415,6 +939,65 @@ module Amqp
         )
       end
       sub
+    end
+
+    def subscribe(queue : String,
+                  *,
+                  consumer_tag : String = "",
+                  auto_ack : Bool = false,
+                  exclusive : Bool = false,
+                  no_local : Bool = false,
+                  arguments : Amqp::Arguments = Amqp::Arguments.new,
+                  buffer : Int32 = 16) : Subscription
+      consume(queue, consumer_tag: consumer_tag, no_local: no_local,
+        no_ack: auto_ack, exclusive: exclusive, arguments: arguments, buffer: buffer)
+    end
+
+    def consume(queue : String,
+                *,
+                consumer_tag : String = "",
+                auto_ack : Bool = false,
+                exclusive : Bool = false,
+                no_local : Bool = false,
+                arguments : Amqp::Arguments = Amqp::Arguments.new,
+                & : DeliverMessage -> _) : Nil
+      sub = subscribe(queue, consumer_tag: consumer_tag, auto_ack: auto_ack,
+        exclusive: exclusive, no_local: no_local, arguments: arguments)
+      loop do
+        delivery = sub.receive
+        begin
+          yield delivery
+          delivery.ack if auto_ack
+        rescue ex
+          delivery.reject(requeue: true) unless auto_ack
+          raise ex
+        end
+      rescue Subscription::Closed
+        break
+      end
+    end
+
+    def get(queue : String, *, auto_ack : Bool = false) : GetMessage?
+      ensure_open!
+      enter_operation
+      slot = ::Channel(GetMessage | Nil | Exception).new(1)
+      @get_slot = slot
+      begin
+        @connection.write_frame(@id, Amqp::Wire::FrameType::Method,
+          Amqp::Wire::AmqpZeroNineOne::BasicMethods::Get.new(queue, auto_ack).to_payload)
+        reply = receive_get_reply(slot, default_rpc_timeout)
+        case reply
+        in Exception
+          raise reply
+        in GetMessage
+          reply
+        in Nil
+          nil
+        end
+      ensure
+        @get_slot = nil
+        leave_operation
+      end
     end
 
     def cancel(consumer_tag : String) : Nil
@@ -448,7 +1031,295 @@ module Amqp
 
     # ---- Internals -----------------------------------------------------
 
+    private def default_rpc_timeout : Time::Span
+      hb = @connection.heartbeat
+      hb == Time::Span.zero ? 5.seconds : hb
+    end
+
+    private def enter_operation : Nil
+      @operation_mutex.synchronize do
+        if @operation_busy
+          raise ConcurrencyError.new("channel #{@id} already has a state-changing operation in progress")
+        end
+        @operation_busy = true
+      end
+    end
+
+    private def leave_operation : Nil
+      @operation_mutex.synchronize { @operation_busy = false }
+    end
+
+    private def receive_sync_reply(slot, timeout : Time::Span) : MethodEnvelope | Exception
+      select
+      when reply = slot.receive
+        reply
+      when timeout(timeout)
+        ChannelRpcTimeoutError.new("channel #{@id}: timed out waiting for broker reply")
+      end
+    end
+
+    private def receive_get_reply(slot, timeout : Time::Span) : GetMessage | Nil | Exception
+      select
+      when reply = slot.receive
+        reply
+      when timeout(timeout)
+        ChannelRpcTimeoutError.new("channel #{@id}: timed out waiting for basic.get reply")
+      end
+    end
+
+    private def wait_for_flow_active : Nil
+      loop do
+        ensure_open!
+        waker = @flow_mutex.synchronize do
+          return if @flow_active
+          @flow_waker
+        end
+        select
+        when waker.receive?
+        when timeout(default_rpc_timeout)
+        end
+      end
+    end
+
+    private def set_flow_active(active : Bool) : Nil
+      old_waker = nil
+      @flow_mutex.synchronize do
+        @flow_active = active
+        if active
+          old_waker = @flow_waker
+          @flow_waker = ::Channel(Nil).new
+        end
+      end
+      old_waker.try &.close
+    end
+
+    private def publish_unconfirmed(message : Message,
+                                    exchange : String,
+                                    routing_key : String,
+                                    mandatory : Bool,
+                                    immediate : Bool) : UInt64?
+      header_payload = unless message.properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          message.body.size.to_u64,
+          message.properties,
+        )
+      end
+      write_publish_frames(exchange, routing_key, mandatory, immediate,
+        header_payload, message.body, max_body_per_frame(@connection.frame_max)) { }
+      @connection.stats.incr_published
+      nil
+    end
+
+    private def publish_registered(message : Message,
+                                   exchange : String,
+                                   routing_key : String,
+                                   mandatory : Bool,
+                                   immediate : Bool,
+                                   outcome : ::Channel(ConfirmOutcome)?) : UInt64?
+      header_payload = unless message.properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          message.body.size.to_u64,
+          message.properties,
+        )
+      end
+      frame_max = @connection.frame_max
+      max_body = max_body_per_frame(frame_max)
+      seq = nil
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      @confirms_mutex.lock if lock_during_write
+      begin
+        if @confirms_enabled
+          if lock_during_write
+            seq = register_pending_confirm_locked(message, exchange, routing_key, mandatory, outcome)
+          else
+            write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+              message.body, max_body) do
+              seq = @confirms_mutex.synchronize do
+                register_pending_confirm_locked(message, exchange, routing_key, mandatory, outcome)
+              end
+            end
+            @connection.stats.incr_published
+            return seq
+          end
+        end
+        write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+          message.body, max_body) { }
+      rescue ex
+        if tag = seq
+          if lock_during_write
+            discard_pending_confirm_locked(tag)
+          else
+            @confirms_mutex.synchronize { discard_pending_confirm_locked(tag) }
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      @connection.stats.incr_published
+      seq
+    end
+
+    private def register_pending_confirm_locked(message : Message,
+                                                exchange : String,
+                                                routing_key : String,
+                                                mandatory : Bool,
+                                                outcome : ::Channel(ConfirmOutcome)?) : UInt64
+      seq = @next_publish_seq
+      @next_publish_seq += 1
+      @unconfirmed << seq
+      @lowest_unconfirmed ||= seq
+      replay_message = @connection.recovery_mode.full? ? message : nil
+      @pending_confirms[seq] = PendingConfirm.new(
+        seq, mandatory, outcome, replay_message, exchange, routing_key,
+      )
+      seq
+    end
+
+    private def discard_pending_confirm_locked(tag : UInt64) : Nil
+      @unconfirmed.delete(tag)
+      @pending_confirms.delete(tag)
+      @returned_confirms.delete(tag)
+      refresh_lowest_unconfirmed_locked if @lowest_unconfirmed == tag
+    end
+
+    private def publish_batch_unconfirmed(messages : Array(Message),
+                                          exchange : String,
+                                          routing_key : String,
+                                          mandatory : Bool,
+                                          immediate : Bool) : Array(UInt64?)
+      seqs = Array(UInt64?).new(messages.size) { nil }
+      return seqs if messages.empty?
+
+      max_body = max_body_per_frame(@connection.frame_max)
+      @connection.with_write do |io|
+        messages.each do |message|
+          header_payload = unless message.properties.empty?
+            Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+              Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+              message.body.size.to_u64,
+              message.properties,
+            )
+          end
+          write_publish_frames_to(io, exchange, routing_key, mandatory, immediate,
+            header_payload, message.body, max_body)
+        end
+      end
+      @connection.stats.incr_published(messages.size.to_i64)
+      seqs
+    end
+
+    private def publish_batch_registered(messages : Array(Message),
+                                         exchange : String,
+                                         routing_key : String,
+                                         mandatory : Bool,
+                                         immediate : Bool) : Array(UInt64?)
+      seqs = Array(UInt64?).new(messages.size)
+      return seqs if messages.empty?
+
+      max_body = max_body_per_frame(@connection.frame_max)
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      @confirms_mutex.lock if lock_during_write
+      begin
+        @connection.with_write do |io|
+          messages.each do |message|
+            header_payload = unless message.properties.empty?
+              Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+                Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+                message.body.size.to_u64,
+                message.properties,
+              )
+            end
+
+            seq = nil
+            if @confirms_enabled
+              if lock_during_write
+                seq = register_pending_confirm_locked(message, exchange, routing_key, mandatory, nil)
+              else
+                seq = @confirms_mutex.synchronize do
+                  register_pending_confirm_locked(message, exchange, routing_key, mandatory, nil)
+                end
+              end
+            end
+
+            write_publish_frames_to(io, exchange, routing_key, mandatory, immediate,
+              header_payload, message.body, max_body)
+            @connection.stats.incr_published
+            seqs << seq
+          end
+        end
+      rescue ex
+        unless seqs.empty?
+          if lock_during_write
+            seqs.each { |tag| discard_pending_confirm_locked(tag) if tag }
+          else
+            @confirms_mutex.synchronize do
+              seqs.each { |tag| discard_pending_confirm_locked(tag) if tag }
+            end
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      seqs
+    end
+
+    private def write_publish_frames(exchange : String,
+                                     routing_key : String,
+                                     mandatory : Bool,
+                                     immediate : Bool,
+                                     header_payload : Bytes?,
+                                     body : Bytes,
+                                     max_body : Int32,
+                                     &before_write : ->) : Nil
+      @connection.with_write do |io|
+        before_write.call
+        write_publish_frames_to(io, exchange, routing_key, mandatory, immediate,
+          header_payload, body, max_body)
+      end
+    end
+
+    private def write_publish_frames_to(io : IO,
+                                        exchange : String,
+                                        routing_key : String,
+                                        mandatory : Bool,
+                                        immediate : Bool,
+                                        header_payload : Bytes?,
+                                        body : Bytes,
+                                        max_body : Int32) : Nil
+      Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_publish_frame(
+        io, @id, exchange, routing_key, mandatory, immediate,
+      )
+      write_content_header_frame(io, body.size.to_u64, header_payload)
+      offset = 0
+      while offset < body.size
+        chunk = Math.min(max_body, body.size - offset)
+        Amqp::Wire::Frame.write_prefix(io, Amqp::Wire::FrameType::Body, @id, chunk)
+        io.write(body[offset, chunk])
+        io.write_byte(Amqp::Wire::FRAME_END)
+        offset += chunk
+      end
+    end
+
+    private def write_content_header_frame(io : IO,
+                                           body_size : UInt64,
+                                           encoded_payload : Bytes?) : Nil
+      if payload = encoded_payload
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Header, @id, payload).write(io)
+      else
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.write_empty_frame(
+          io, @id, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, body_size,
+        )
+      end
+    end
+
     private def ensure_open! : Nil
+      if @connection.state_recovering?
+        raise RecoveryInProgress.new("connection is recovering")
+      end
       case @state
       when .open?
         # ok
@@ -462,12 +1333,24 @@ module Amqp
     end
 
     private def sync_rpc(payload : Bytes) : MethodEnvelope
+      enter_operation
+      begin
+        sync_rpc_locked(payload, default_rpc_timeout)
+      ensure
+        leave_operation
+      end
+    end
+
+    private def sync_rpc_locked(payload : Bytes, timeout : Time::Span) : MethodEnvelope
       @sync_mutex.synchronize do
+        if @connection.state_recovering?
+          raise RecoveryInProgress.new("connection is recovering")
+        end
         case @state
         when .recovering?
           raise RecoveryInProgress.new("channel #{@id} is recovering")
         when .closed?
-          raise (@close_reason || ChannelClosedByCaller.new("channel #{@id} closed"))
+          raise(@close_reason || ChannelClosedByCaller.new("channel #{@id} closed"))
         end
         slot = ::Channel(MethodEnvelope | Exception).new(1)
         @sync_slot = slot
@@ -478,7 +1361,7 @@ module Amqp
           raise ex
         end
 
-        reply = slot.receive
+        reply = receive_sync_reply(slot, timeout)
         @sync_slot = nil
         case reply
         in Exception
@@ -571,7 +1454,17 @@ module Amqp
         end
         exc = map_channel_close(cls)
         notify_sync_failure(exc)
+        emit_close(cls.reply_code, cls.reply_text)
         finalize_closed(exc)
+        return
+      end
+
+      if class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_CHANNEL &&
+         method_id == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CHANNEL_FLOW
+        flow = Amqp::Wire::AmqpZeroNineOne::ChannelMethods::Flow.read(body)
+        set_flow_active(flow.active)
+        @connection.write_frame(@id, Amqp::Wire::FrameType::Method,
+          Amqp::Wire::AmqpZeroNineOne::ChannelMethods::FlowOk.new(flow.active).to_payload)
         return
       end
 
@@ -581,18 +1474,40 @@ module Amqp
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER
           @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver.read(body)
           @pending_body = IO::Memory.new
+          @pending_body_direct = nil
           @pending_body_received = 0_u64
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_RETURN
           @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return.read(body)
           @pending_body = IO::Memory.new
+          @pending_body_direct = nil
           @pending_body_received = 0_u64
+          return
+        when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_GET_OK
+          @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk.read(body)
+          @pending_body = IO::Memory.new
+          @pending_body_direct = nil
+          @pending_body_received = 0_u64
+          return
+        when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_GET_EMPTY
+          Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetEmpty.read(body)
+          slot = @get_slot
+          if slot
+            slot.send(nil)
+          else
+            raise ProtocolError.new("channel #{@id}: unsolicited basic.get-empty")
+          end
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CANCEL
           cancel = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Cancel.read(body)
           sub = @consumers_mutex.synchronize { @consumers.delete(cancel.consumer_tag) }
           @topology_mutex.synchronize { @topology_consumers.delete(cancel.consumer_tag) }
           sub.try &.mark_closed
+          unless cancel.no_wait
+            @connection.write_frame(@id, Amqp::Wire::FrameType::Method,
+              Amqp::Wire::AmqpZeroNineOne::BasicMethods::CancelOk.new(cancel.consumer_tag).to_payload)
+          end
+          emit_cancel(cancel.consumer_tag)
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_ACK
           ack = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.read(body)
@@ -632,7 +1547,11 @@ module Amqp
 
     private def process_body_frame(frame : Amqp::Wire::Frame) : Nil
       raise ProtocolError.new("channel #{@id}: body without header") if @pending_method.nil?
-      @pending_body.write(frame.payload)
+      if @pending_body_received == 0 && frame.payload.size.to_u64 == @pending_body_size
+        @pending_body_direct = frame.payload
+      else
+        @pending_body.write(frame.payload)
+      end
       @pending_body_received += frame.payload.size.to_u64
       if @pending_body_received > @pending_body_size
         raise ProtocolError.new("channel #{@id}: body fragment overflows declared size")
@@ -645,12 +1564,13 @@ module Amqp
     private def emit_pending_delivery : Nil
       method = @pending_method
       props = @pending_props || Properties.new
-      body_bytes = @pending_body.to_slice
+      body_bytes = @pending_body_direct || @pending_body.to_slice
       @pending_method = nil
       @pending_props = nil
       @pending_body_size = 0_u64
       @pending_body_received = 0_u64
       @pending_body = IO::Memory.new
+      @pending_body_direct = nil
 
       case method
       in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver
@@ -668,9 +1588,25 @@ module Amqp
         sub.try &.deliver(delivery)
         @connection.stats.incr_consumed
       in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return
-        # Mandatory-publish unroutable messages: stats only for now;
-        # caller-visible return handling lives in a later slice.
+        emit_return(method, props, body_bytes)
         @connection.stats.incr_returned
+      in Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk
+        msg = GetMessage.new(
+          body: body_bytes,
+          properties: props,
+          delivery_tag: method.delivery_tag,
+          redelivered: method.redelivered,
+          exchange: method.exchange,
+          routing_key: method.routing_key,
+          message_count: method.message_count,
+          channel: self,
+        )
+        slot = @get_slot
+        if slot
+          slot.send(msg)
+        else
+          raise ProtocolError.new("channel #{@id}: unsolicited basic.get-ok content")
+        end
       in Nil
         # nothing
       end
@@ -689,31 +1625,115 @@ module Amqp
     private def notify_sync_failure(exc : Exception) : Nil
       slot = @sync_slot
       slot.try &.send(exc)
+      get_slot = @get_slot
+      get_slot.try &.send(exc)
+    end
+
+    private def record_return(ret : Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return) : Nil
+      reason = ReturnReason.new(ret.reply_code, ret.reply_text, ret.exchange, ret.routing_key)
+      @confirms_mutex.synchronize do
+        tag = @pending_confirms
+          .select { |_seq, pending| pending.mandatory }
+          .keys
+          .min?
+        @returned_confirms[tag] = reason if tag
+      end
+    end
+
+    private def emit_return(ret : Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return,
+                            properties : Properties,
+                            body : Bytes) : Nil
+      record_return(ret)
+      if callback = @on_return
+        returned = ReturnedMessage.new(
+          ret.reply_code,
+          ret.reply_text,
+          ret.exchange,
+          ret.routing_key,
+          properties,
+          body,
+        )
+        spawn(name: "amqp-return-#{@id}") { callback.call(returned) }
+      end
+    end
+
+    private def emit_cancel(consumer_tag : String) : Nil
+      if callback = @on_cancel
+        spawn(name: "amqp-cancel-#{@id}") { callback.call(consumer_tag) }
+      end
+    end
+
+    private def emit_close(reply_code : UInt16, reply_text : String) : Nil
+      if callback = @on_close
+        spawn(name: "amqp-close-#{@id}") { callback.call(reply_code, reply_text) }
+      end
     end
 
     # Settle a single seq (multiple=false) or all seqs up to and including
     # `tag` (multiple=true). Sets nack-flag if any settled seq was negative,
     # then wakes any wait_for_confirms waiters.
     private def settle_publish(tag : UInt64, multiple : Bool, nacked : Bool) : Nil
-      settled = 0
+      outcomes = [] of ConfirmOutcome
       @confirms_mutex.synchronize do
         if multiple
-          before = @unconfirmed.size
-          @unconfirmed.reject! { |s| s <= tag }
-          settled = before - @unconfirmed.size
+          raise PublishOutOfOrderError.new(tag) unless @unconfirmed.includes?(tag)
+          tags = @unconfirmed.select { |s| s <= tag }.sort
+          tags.each do |seq|
+            outcomes << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
+          end
+          refresh_lowest_unconfirmed_locked
         else
-          settled = @unconfirmed.delete(tag) ? 1 : 0
+          if @unconfirmed.includes?(tag)
+            outcomes << settle_one_publish_locked(tag, nacked)
+          else
+            raise PublishOutOfOrderError.new(tag)
+          end
         end
-        @confirms_nacked = true if nacked
+        @confirms_nacked = true if nacked || outcomes.any? { |outcome| outcome.kind.returned? }
         wake_confirms_locked
       end
-      if settled > 0
-        delta = settled.to_i64
-        if nacked
-          @connection.stats.incr_confirmed_nack(delta)
+      outcomes.each do |outcome|
+        if outcome.kind.nack?
+          @connection.stats.incr_confirmed_nack
         else
-          @connection.stats.incr_confirmed_ack(delta)
+          @connection.stats.incr_confirmed_ack
         end
+      end
+    end
+
+    private def settle_one_publish_locked(tag : UInt64,
+                                          nacked : Bool,
+                                          *,
+                                          refresh_lowest : Bool = true) : ConfirmOutcome
+      @unconfirmed.delete(tag)
+      refresh_lowest_unconfirmed_locked if refresh_lowest && @lowest_unconfirmed == tag
+      pending = @pending_confirms.delete(tag)
+      reason = @returned_confirms.delete(tag)
+      kind = if reason
+               ConfirmOutcome::Kind::Returned
+             elsif nacked
+               ConfirmOutcome::Kind::Nack
+             else
+               ConfirmOutcome::Kind::Ack
+             end
+      outcome = ConfirmOutcome.new(kind, tag, reason)
+      if pending && (ch = pending.outcome)
+        begin
+          ch.send(outcome)
+        rescue
+        ensure
+          ch.close rescue nil
+        end
+      end
+      outcome
+    end
+
+    # Caller MUST already hold @confirms_mutex.
+    private def refresh_lowest_unconfirmed_locked : Nil
+      @lowest_unconfirmed = nil
+      @unconfirmed.each do |seq|
+        low = @lowest_unconfirmed
+        @lowest_unconfirmed = seq if low.nil? || seq < low
       end
     end
 
@@ -733,7 +1753,21 @@ module Amqp
         @consumers.each_value(&.mark_closed)
         @consumers.clear
       end
-      @confirms_mutex.synchronize { wake_confirms_locked }
+      @confirms_mutex.synchronize do
+        @pending_confirms.each_value do |pending|
+          pending.outcome.try { |ch| ch.close rescue nil }
+        end
+        @pending_confirms.clear
+        @unconfirmed.clear
+        @lowest_unconfirmed = nil
+        @returned_confirms.clear
+        wake_confirms_locked
+      end
+      @flow_mutex.synchronize do
+        old = @flow_waker
+        @flow_waker = ::Channel(Nil).new
+        old.close rescue nil
+      end
       @connection.unregister_channel(@id)
       @inbox.close rescue nil
     end
@@ -760,12 +1794,10 @@ module Amqp
         @consumers.each_value(&.reset_mailbox)
       end
 
-      # Surface unconfirmed publishes as nacked so wait_for_confirms wakes.
       @confirms_mutex.synchronize do
-        unless @unconfirmed.empty?
-          @confirms_nacked = true
-          @unconfirmed.clear
-        end
+        @unconfirmed.clear
+        @lowest_unconfirmed = nil
+        @returned_confirms.clear
         @next_publish_seq = 1_u64
         wake_confirms_locked
       end
@@ -874,6 +1906,16 @@ module Amqp
             end
           end
         end
+        @confirms_mutex.synchronize do
+          @pending_confirms.each do |seq, pending|
+            new_routing_key = renames[pending.routing_key]?
+            next unless pending.exchange.empty? && new_routing_key
+            @pending_confirms[seq] = PendingConfirm.new(
+              pending.original_tag, pending.mandatory, pending.outcome,
+              pending.replay_message, pending.exchange, new_routing_key,
+            )
+          end
+        end
       end
 
       bindings = @topology_mutex.synchronize { @topology_bindings.dup }
@@ -899,7 +1941,38 @@ module Amqp
           Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CONSUME_OK)
       end
 
+      republish_unconfirmed
+
+      @confirms_mutex.synchronize { @confirms_nacked = false }
+
       @state = State::Open
+    end
+
+    private def republish_unconfirmed : Nil
+      pending = @confirms_mutex.synchronize do
+        values = @pending_confirms.values.sort_by(&.original_tag)
+        @pending_confirms.clear
+        @unconfirmed.clear
+        @lowest_unconfirmed = nil
+        @returned_confirms.clear
+        @next_publish_seq = 1_u64
+        values
+      end
+      pending.each do |entry|
+        publish_registered(entry.message_for_replay, entry.exchange, entry.routing_key,
+          entry.mandatory, false, entry.outcome)
+      end
+    end
+
+    # Test-only hook for confirm tracker invariants without a synthetic broker.
+    private def __settle_publish_for_test(tag : UInt64, multiple : Bool, nacked : Bool) : Nil
+      settle_publish(tag, multiple, nacked)
+    end
+
+    private def __await_publish_confirm_for_test(tag : UInt64,
+                                                 outcome : ::Channel(ConfirmOutcome),
+                                                 timeout : Time::Span) : Bool
+      await_publish_confirm(tag, outcome, "", "spec", timeout)
     end
   end
 end

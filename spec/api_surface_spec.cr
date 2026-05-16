@@ -1,0 +1,186 @@
+require "./spec_helper"
+
+describe "documented public API surface" do
+  it "keeps the top-level Amqp namespace intentional" do
+    constants = {{ Amqp.constants.map(&.stringify).sort }}
+    constants.should eq([
+      "Arguments",
+      "AuthenticationError",
+      "Channel",
+      "ChannelClosedByBroker",
+      "ChannelClosedByCaller",
+      "ChannelError",
+      "ChannelLimitError",
+      "ChannelRpcTimeoutError",
+      "ConcurrencyError",
+      "Config",
+      "ConfigurationError",
+      "ConfirmOutcome",
+      "ConnectError",
+      "ConnectRefusedError",
+      "ConnectTimeoutError",
+      "Connection",
+      "ConnectionClosedByBroker",
+      "ConnectionClosedByCaller",
+      "ConnectionError",
+      "DeliverMessage",
+      "Delivery",
+      "Error",
+      "Exchange",
+      "FieldValue",
+      "FrameTooLargeError",
+      "GetMessage",
+      "HeartbeatTimeoutError",
+      "Message",
+      "Persistence",
+      "PreconditionFailedError",
+      "Properties",
+      "ProtocolError",
+      "ProtocolNegotiationError",
+      "PublishNackError",
+      "PublishOutOfOrderError",
+      "PublishReturnedError",
+      "PublishTimeoutError",
+      "Queue",
+      "QueueDeclareOk",
+      "QueueInfo",
+      "Recovery",
+      "RecoveryExhaustedError",
+      "RecoveryInProgress",
+      "ReturnReason",
+      "ReturnedMessage",
+      "SocketError",
+      "Stats",
+      "Subscription",
+      "SubscriptionClosed",
+      "TlsConfigError",
+      "TlsHandshakeError",
+      "UriError",
+      "VERSION",
+      "VhostAccessError",
+      "Wire",
+    ])
+  end
+
+  it "type-checks connection helpers and value types" do
+    typeof(Amqp.connect(URI.parse("amqp://guest:guest@127.0.0.1/"))).should eq(Amqp::Connection)
+    typeof(Amqp::Message.new("body")).should eq(Amqp::Message)
+    typeof(Amqp::Recovery::Full).should eq(Amqp::Recovery)
+    typeof(Amqp::Persistence::Persistent).should eq(Amqp::Properties::Persistence)
+  end
+
+  it "type-checks documented connection methods" do
+    conn = uninitialized Amqp::Connection
+    typeof(conn.closed?).should eq(Bool)
+    typeof(conn.close_reason).to_s.should eq("(Exception | Nil)")
+    typeof(conn.channel).should eq(Amqp::Channel)
+    typeof(conn.channel(1_u16)).should eq(Amqp::Channel)
+    typeof(conn.heartbeat).should eq(Time::Span)
+    typeof(conn.channel_max).should eq(UInt16)
+    typeof(conn.frame_max).should eq(UInt32)
+    typeof(conn.server_properties).should eq(Amqp::Arguments)
+    typeof(conn.stats).should eq(Amqp::Stats)
+    typeof(conn.recovery_mode).should eq(Amqp::Recovery)
+    typeof(conn.blocked?).should eq(Bool)
+    typeof(conn.on_blocked { |reason| reason.size; nil }).should eq(Nil)
+    typeof(conn.on_unblocked { nil }).should eq(Nil)
+  end
+
+  it "type-checks documented channel methods" do
+    ch = uninitialized Amqp::Channel
+    typeof(ch.open?).should eq(Bool)
+    typeof(ch.confirms_enabled?).should eq(Bool)
+    typeof(ch.prefetch(1_u16)).should eq(Nil)
+    typeof(ch.publish(Amqp::Message.new("x"), "", "rk")).should eq(UInt64?)
+    typeof(ch.publish_batch([Amqp::Message.new("x")], "", "rk")).should eq(Array(UInt64?))
+    typeof(ch.publish_batch(["x".to_slice], "", "rk")).should eq(Array(UInt64?))
+    typeof(ch.publish_confirm(Amqp::Message.new("x"), "", "rk")).should eq(Bool)
+    typeof(ch.publish_async(Amqp::Message.new("x"), "", "rk")).should eq(Tuple(UInt64, ::Channel(Amqp::ConfirmOutcome)))
+    typeof(ch.subscribe("q")).should eq(Amqp::Subscription)
+    typeof(ch.get("q")).should eq(Amqp::GetMessage?)
+    typeof(ch.queue_purge("q")).should eq(UInt32)
+    typeof(ch.queue_unbind("q", "ex", "rk")).should eq(Nil)
+    typeof(ch.exchange_delete("ex")).should eq(Nil)
+    typeof(ch.exchange_bind("dest", "src", "rk")).should eq(Nil)
+    typeof(ch.exchange_unbind("dest", "src", "rk")).should eq(Nil)
+    typeof(ch.basic_publish("x", "", "rk")).should eq(UInt64)
+    typeof(ch.basic_publish(IO::Memory.new("x"), 1, "", "rk")).should eq(UInt64)
+    typeof(ch.basic_publish(IO::Memory.new("x"), 1, "", "rk") { |ok| ok.to_s; nil }).should eq(UInt64)
+    typeof(ch.basic_publish_confirm("x", "", "rk")).should eq(Bool)
+    typeof(ch.basic_publish_confirm(IO::Memory.new("x"), 1, "", "rk")).should eq(Bool)
+    typeof(ch.basic_get("q")).should eq(Amqp::GetMessage?)
+    typeof(ch.basic_consume("q") { |msg| msg.ack }).should eq(String)
+    typeof(ch.basic_cancel("ctag")).should eq(Nil)
+    typeof(ch.basic_ack(1_u64)).should eq(Nil)
+    typeof(ch.basic_reject(1_u64)).should eq(Nil)
+    typeof(ch.basic_nack(1_u64)).should eq(Nil)
+    typeof(ch.basic_qos(1_u16)).should eq(Nil)
+    typeof(ch.basic_recover).should eq(Nil)
+    typeof(ch.flow(true)).should eq(Nil)
+    typeof(ch.tx_select).should eq(Nil)
+    typeof(ch.tx_commit).should eq(Nil)
+    typeof(ch.tx_rollback).should eq(Nil)
+    typeof(ch.transaction { 1 }).should eq(Int32)
+    typeof(ch.on_return { |msg| msg.reason }).should eq(Nil)
+    typeof(ch.on_cancel { |tag| tag.size; nil }).should eq(Nil)
+    typeof(ch.on_close { |code, text| code.to_s + text; nil }).should eq(Nil)
+    typeof(ch.queue).should eq(Amqp::Queue)
+    typeof(ch.queue("q")).should eq(Amqp::Queue)
+    typeof(ch.exchange("ex", "direct")).should eq(Amqp::Exchange)
+    typeof(ch.default_exchange).should eq(Amqp::Exchange)
+    typeof(ch.direct_exchange).should eq(Amqp::Exchange)
+    typeof(ch.topic_exchange).should eq(Amqp::Exchange)
+    typeof(ch.fanout_exchange).should eq(Amqp::Exchange)
+    typeof(ch.header_exchange).should eq(Amqp::Exchange)
+  end
+
+  it "type-checks queue and exchange wrappers" do
+    queue = uninitialized Amqp::Queue
+    exchange = uninitialized Amqp::Exchange
+    typeof(queue.name).should eq(String)
+    typeof(queue.bind("ex", "rk")).should eq(Amqp::Queue)
+    typeof(queue.unbind("ex", "rk")).should eq(Amqp::Queue)
+    typeof(queue.publish("x")).should eq(UInt64)
+    typeof(queue.publish(IO::Memory.new("x"), 1)).should eq(UInt64)
+    typeof(queue.publish(IO::Memory.new("x"), 1) { |ok| ok.to_s; nil }).should eq(UInt64)
+    typeof(queue.publish_confirm("x")).should eq(Bool)
+    typeof(queue.publish_confirm(IO::Memory.new("x"), 1)).should eq(Bool)
+    typeof(queue.get).should eq(Amqp::GetMessage?)
+    typeof(queue.subscribe { |msg| msg.ack }).should eq(String)
+    typeof(queue.unsubscribe("ctag")).should eq(Amqp::Queue)
+    typeof(queue.purge).should eq(UInt32)
+    typeof(queue.delete).should eq(UInt32)
+    typeof(queue.message_count).should eq(UInt32)
+    typeof(queue.consumer_count).should eq(UInt32)
+
+    typeof(exchange.name).should eq(String)
+    typeof(exchange.bind("src", "rk")).should eq(Amqp::Exchange)
+    typeof(exchange.unbind("src", "rk")).should eq(Amqp::Exchange)
+    typeof(exchange.publish("x", "rk")).should eq(UInt64)
+    typeof(exchange.publish_confirm("x", "rk")).should eq(Bool)
+    typeof(exchange.delete).should eq(Nil)
+  end
+
+  it "type-checks returned messages" do
+    msg = uninitialized Amqp::ReturnedMessage
+    typeof(msg.reply_code).should eq(UInt16)
+    typeof(msg.reply_text).should eq(String)
+    typeof(msg.exchange).should eq(String)
+    typeof(msg.routing_key).should eq(String)
+    typeof(msg.properties).should eq(Amqp::Properties)
+    typeof(msg.body).should eq(Bytes)
+    typeof(msg.reason).should eq(Amqp::ReturnReason)
+  end
+
+  it "type-checks Subscription#receive as a select arm" do
+    typeof(begin
+      sub = uninitialized Amqp::Subscription
+      select
+      when msg = sub.receive
+        msg
+      when timeout(1.nanosecond)
+        nil
+      end
+    end).should eq(Amqp::Delivery | Nil)
+  end
+end

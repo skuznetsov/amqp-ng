@@ -6,8 +6,8 @@ describe "heartbeats" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url, heartbeat: 5.seconds) do |conn|
         # Either we asked for 5s and broker accepted, or broker capped lower.
-        conn.heartbeat.should be > 0_u16
-        conn.heartbeat.should be <= 60_u16
+        conn.heartbeat.should be > Time::Span.zero
+        conn.heartbeat.should be <= 60.seconds
       end
     end
 

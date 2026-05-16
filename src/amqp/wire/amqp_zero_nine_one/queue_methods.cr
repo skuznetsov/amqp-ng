@@ -87,6 +87,34 @@ module Amqp::Wire::AmqpZeroNineOne
       end
     end
 
+    struct Purge
+      getter name : String
+
+      def initialize(@name)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_QUEUE, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_QUEUE_PURGE, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+        Types.write_shortstr(io, @name)
+        BitPack.write(io, [false]) # no-wait
+        io.to_slice
+      end
+    end
+
+    struct PurgeOk
+      getter message_count : UInt32
+
+      def initialize(@message_count)
+      end
+
+      def self.read(io : IO) : self
+        new(io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian))
+      end
+    end
+
     struct Delete
       getter name : String
       getter if_unused : Bool
@@ -114,6 +142,34 @@ module Amqp::Wire::AmqpZeroNineOne
 
       def self.read(io : IO) : self
         new(io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian))
+      end
+    end
+
+    struct Unbind
+      getter queue : String
+      getter exchange : String
+      getter routing_key : String
+      getter arguments : Amqp::Arguments
+
+      def initialize(@queue, @exchange, @routing_key, @arguments)
+      end
+
+      def to_payload : Bytes
+        io = IO::Memory.new
+        io.write_bytes(CLASS_ID_QUEUE, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(METHOD_ID_QUEUE_UNBIND, IO::ByteFormat::NetworkEndian)
+        io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+        Types.write_shortstr(io, @queue)
+        Types.write_shortstr(io, @exchange)
+        Types.write_shortstr(io, @routing_key)
+        Types.write_field_table(io, @arguments)
+        io.to_slice
+      end
+    end
+
+    struct UnbindOk
+      def self.read(io : IO) : self
+        new
       end
     end
   end

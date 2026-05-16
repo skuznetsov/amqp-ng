@@ -6,6 +6,7 @@ require "./config"
 require "./stats"
 require "./arguments"
 require "./properties"
+require "./message"
 require "./wire/protocol_header"
 require "./wire/frame"
 require "./wire/amqp_zero_nine_one/types"
@@ -18,10 +19,10 @@ require "./wire/amqp_zero_nine_one/content_header"
 require "./channel"
 
 module Amqp
-  VERSION = "0.1.0"
-
   class Connection
     Log = ::Log.for("amqp.connection")
+    alias BlockedCallback = String -> Nil
+    alias UnblockedCallback = -> Nil
 
     enum State
       Initial
@@ -36,9 +37,12 @@ module Amqp
     getter config : Config
     getter channel_max : UInt16
     getter frame_max : UInt32
-    getter heartbeat : UInt16
     getter? closed : Bool
     getter? blocked : Bool
+
+    def heartbeat : Time::Span
+      @heartbeat.to_i.seconds
+    end
 
     def state_recovering? : Bool
       @state == State::Recovering
@@ -47,6 +51,11 @@ module Amqp
     def recovered_to_open? : Bool
       @state == State::Open
     end
+
+    def recovery_mode : Recovery
+      @config.recovery? ? Recovery::Full : Recovery::None
+    end
+
     @state : State
     @socket : TCPSocket?
     @io : IO?
@@ -57,8 +66,14 @@ module Amqp
     @reader_done : ::Channel(Nil)
     @heartbeat_done : ::Channel(Nil)
     @heartbeat_stop : ::Channel(Nil)
-    @last_write_ns : Atomic(Int64)
+    @last_write_at : Time::Instant
+    @last_write_mutex : Mutex
     @close_reason : Exception?
+    @recovery_mutex : Mutex
+    @recovery_active : Bool
+    @on_blocked : BlockedCallback?
+    @on_unblocked : UnblockedCallback?
+    getter server_properties : Amqp::Arguments
     getter stats : Stats
 
     private def initialize(@config : Config)
@@ -75,17 +90,23 @@ module Amqp
       @reader_done = ::Channel(Nil).new
       @heartbeat_done = ::Channel(Nil).new
       @heartbeat_stop = ::Channel(Nil).new
-      @last_write_ns = Atomic(Int64).new(0_i64)
+      @last_write_at = Time.instant
+      @last_write_mutex = Mutex.new
       @close_reason = nil
+      @recovery_mutex = Mutex.new
+      @recovery_active = false
+      @on_blocked = nil
+      @on_unblocked = nil
+      @server_properties = Amqp::Arguments.new
       @stats = Stats.new
     end
 
-    private def monotonic_ns : Int64
-      Time.monotonic.total_nanoseconds.to_i64
+    private def stamp_write : Nil
+      @last_write_mutex.synchronize { @last_write_at = Time.instant }
     end
 
-    private def stamp_write : Nil
-      @last_write_ns.set(monotonic_ns)
+    private def idle_since_last_write : Time::Span
+      @last_write_mutex.synchronize { @last_write_at.elapsed }
     end
 
     def self.connect(config : Config) : Connection
@@ -123,9 +144,8 @@ module Amqp
         raise SocketError.new("socket error: #{ex.message}", ex)
       end
 
-      sock.sync = false
-      sock.read_buffering = true
-      sock.tcp_nodelay = true
+      apply_io_buffering(sock)
+      sock.tcp_nodelay = @config.tcp_nodelay?
       @socket = sock
 
       io : IO = sock
@@ -134,6 +154,7 @@ module Amqp
           ctx = @config.tls_context || default_tls_context
           io = OpenSSL::SSL::Socket::Client.new(sock, context: ctx,
             sync_close: true, hostname: @config.host)
+          apply_io_buffering(io)
         rescue ex : OpenSSL::SSL::Error
           begin
             sock.close
@@ -171,6 +192,17 @@ module Amqp
       OpenSSL::SSL::Context::Client.new
     end
 
+    private def apply_io_buffering(io : IO) : Nil
+      if @config.buffer_size > 0
+        io.buffer_size = @config.buffer_size
+        io.sync = false
+        io.read_buffering = true
+      else
+        io.sync = true
+        io.read_buffering = false
+      end
+    end
+
     private def start_session_fibers : Nil
       @reader_done = ::Channel(Nil).new
       @heartbeat_done = ::Channel(Nil).new
@@ -196,6 +228,7 @@ module Amqp
       start = expect_connection_method(io, Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CONNECTION_START) do |body_io|
         Amqp::Wire::AmqpZeroNineOne::ConnectionMethods::Start.read(body_io)
       end
+      @server_properties = start.server_properties
       assert_mechanism_supported(start.mechanisms)
 
       response_bytes = build_plain_response(@config.user, @config.password)
@@ -382,8 +415,61 @@ module Amqp
         end
       end
       channel = @channels[id]
-      channel.open
+      begin
+        channel.open
+      rescue ex
+        unregister_channel(id)
+        raise ex
+      end
       channel
+    end
+
+    def channel : Channel
+      open_channel
+    end
+
+    def channel(id : UInt16) : Channel
+      raise SocketError.new("connection closed") if @closed
+      raise RecoveryInProgress.new("connection is recovering") if @state == State::Recovering
+      ch = @channels_mutex.synchronize do
+        if @channels.has_key?(id)
+          raise ChannelLimitError.new("channel #{id} is already open")
+        end
+        raise ChannelLimitError.new("channel id 0 is reserved") if id == 0
+        cap = @channel_max == 0 ? UInt16::MAX : @channel_max
+        raise ChannelLimitError.new("channel id #{id} exceeds channel_max=#{cap}") if id > cap
+        channel = Channel.new(self, id)
+        @channels[id] = channel
+        channel
+      end
+      begin
+        ch.open
+      rescue ex
+        unregister_channel(id)
+        raise ex
+      end
+      ch
+    end
+
+    def with_channel(& : Channel -> _) : Nil
+      ch = channel
+      begin
+        yield ch
+      ensure
+        ch.close
+      end
+    end
+
+    def close_reason : Exception?
+      @close_reason
+    end
+
+    def on_blocked(&callback : String -> Nil) : Nil
+      @on_blocked = callback
+    end
+
+    def on_unblocked(&callback : -> Nil) : Nil
+      @on_unblocked = callback
     end
 
     protected def unregister_channel(id : UInt16) : Nil
@@ -419,10 +505,24 @@ module Amqp
 
     # Choose between full shutdown and an automatic recovery cycle.
     # Recovery is opt-in via Config#recovery and only fires for transport
-    # failures — deliberate broker close, auth, and vhost errors always
-    # tear the connection down.
+    # failures or broker-forced shutdowns. Caller close, auth, and vhost
+    # errors always tear the connection down.
     private def handle_session_loss(reason : Exception) : Nil
-      if @config.recovery? && recoverable?(reason) && @state != State::Closing && @state != State::Closed
+      spawn_recovery = false
+      ignore_stale_loss = false
+      @recovery_mutex.synchronize do
+        if @recovery_active
+          ignore_stale_loss = true
+        elsif @config.recovery? && recoverable?(reason) && @state != State::Closing && @state != State::Closed
+          @recovery_active = true
+          @state = State::Recovering
+          spawn_recovery = true
+        end
+      end
+
+      return if ignore_stale_loss
+
+      if spawn_recovery
         spawn(name: "amqp-recovery-#{@config.host}:#{@config.port}") do
           attempt_recovery(reason)
         end
@@ -435,13 +535,24 @@ module Amqp
       case ex
       when HeartbeatTimeoutError, SocketError
         true
+      when ConnectionClosedByBroker
+        recoverable_broker_close?(ex)
+      else
+        false
+      end
+    end
+
+    private def recoverable_broker_close?(ex : ConnectionClosedByBroker) : Bool
+      case ex.reply_code
+      when 320_u16, 541_u16
+        true
       else
         false
       end
     end
 
     private def run_heartbeat_loop : Nil
-      interval_ns = @heartbeat.to_i64 * 1_000_000_000_i64
+      interval = @heartbeat.to_i.seconds
       tick = (@heartbeat.to_f64 / 2.0).seconds
       tick = 1.seconds if tick < 1.seconds
       loop do
@@ -451,8 +562,7 @@ module Amqp
         when timeout(tick)
         end
         break if @closed
-        idle_ns = monotonic_ns - @last_write_ns.get
-        if idle_ns >= interval_ns
+        if idle_since_last_write >= interval
           begin
             write_frame(0_u16, Amqp::Wire::FrameType::Heartbeat, Bytes.empty)
           rescue
@@ -504,9 +614,18 @@ module Amqp
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CONNECTION_CLOSE_OK
           # Response to our caller-initiated close; close() already drains.
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CONNECTION_BLOCKED
+          blocked = Amqp::Wire::AmqpZeroNineOne::ConnectionMethods::Blocked.read(body)
           @blocked = true
+          if blocked_callback = @on_blocked
+            reason = blocked.reason
+            spawn(name: "amqp-connection-blocked") { blocked_callback.call(reason) }
+          end
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_CONNECTION_UNBLOCKED
+          Amqp::Wire::AmqpZeroNineOne::ConnectionMethods::Unblocked.read(body)
           @blocked = false
+          if unblocked_callback = @on_unblocked
+            spawn(name: "amqp-connection-unblocked") { unblocked_callback.call }
+          end
         else
           raise ProtocolError.new("unexpected connection method on channel 0: #{method_id}")
         end
@@ -552,10 +671,22 @@ module Amqp
           established = true
           Log.info { "recovery handshake ok on attempt #{attempt}" }
           break
-        rescue ex : AuthenticationError | VhostAccessError | TlsConfigError | TlsHandshakeError | ProtocolNegotiationError | ConnectionClosedByBroker
+        rescue ex : AuthenticationError | VhostAccessError | TlsConfigError | TlsHandshakeError | ProtocolNegotiationError
           Log.error { "recovery aborted (non-retryable #{ex.class}): #{ex.message}" }
           last_error = ex
           break
+        rescue ex : ConnectionClosedByBroker
+          last_error = ex
+          unless recoverable_broker_close?(ex)
+            Log.error { "recovery aborted (non-retryable #{ex.class}): #{ex.message}" }
+            break
+          end
+          Log.warn { "recovery attempt #{attempt}/#{max_attempts} broker-forced close: #{ex.message}" }
+          if attempt >= max_attempts
+            break
+          end
+          new_delay = delay * 2
+          delay = new_delay > max_delay ? max_delay : new_delay
         rescue ex
           Log.warn { "recovery attempt #{attempt}/#{max_attempts} failed (#{ex.class}): #{ex.message}" }
           last_error = ex
@@ -570,6 +701,7 @@ module Amqp
       unless established
         @stats.incr_recoveries_failed
         Log.error { "recovery exhausted after #{attempt} attempts" }
+        @recovery_mutex.synchronize { @recovery_active = false }
         shutdown_with(RecoveryExhaustedError.new(
           "recovery failed after #{attempt} attempt(s): #{last_error.message}", last_error
         ))
@@ -583,6 +715,7 @@ module Amqp
       rescue ex
         @stats.incr_recoveries_failed
         Log.error { "topology replay failed: #{ex.class}: #{ex.message}" }
+        @recovery_mutex.synchronize { @recovery_active = false }
         shutdown_with(RecoveryExhaustedError.new(
           "topology replay failed: #{ex.message}", ex
         ))
@@ -590,12 +723,14 @@ module Amqp
       end
 
       @state = State::Open
+      @recovery_mutex.synchronize { @recovery_active = false }
       @stats.incr_recoveries_succeeded
       Log.info { "recovery complete (replayed #{channels.size} channel(s))" }
     end
 
     private def shutdown_with(reason : Exception) : Nil
       @close_reason ||= reason
+      @recovery_mutex.synchronize { @recovery_active = false }
       @state = State::Closed
       @closed = true
       stop_heartbeat
@@ -628,15 +763,21 @@ module Amqp
     # `recovered_to_open?` immediately after this returns don't observe
     # the brief Open window before the reader fiber notices the close.
     def __force_disconnect_for_test : Nil
-      @state = State::Recovering if @state == State::Open
-      if sock = @socket
-        sock.close rescue nil
-      end
+      handle_session_loss(SocketError.new("forced disconnect for test"))
+    end
+
+    # Test-only hook: simulates a broker-sent connection.close after the
+    # connection is already Open. This exercises the recovery trigger
+    # classifier without requiring a broker process restart in the default
+    # spec suite.
+    def __force_broker_close_for_test(reply_code : UInt16 = 320_u16,
+                                      reply_text : String = "CONNECTION_FORCED - broker forced connection closure") : Nil
+      handle_session_loss(ConnectionClosedByBroker.new(reply_code, reply_text, 0_u16, 0_u16))
     end
 
     # ---- Caller close ---------------------------------------------------
 
-    def close : Nil
+    def close(*, reply_code : UInt16 = 200_u16, reply_text : String = "OK") : Nil
       return if @closed
       @state = State::Closing
       sock = @socket
@@ -655,7 +796,7 @@ module Amqp
       if io
         begin
           close_frame = Amqp::Wire::AmqpZeroNineOne::ConnectionMethods::Close.new(
-            reply_code: 200_u16, reply_text: "OK", class_id: 0_u16, method_id: 0_u16,
+            reply_code: reply_code, reply_text: reply_text, class_id: 0_u16, method_id: 0_u16,
           )
           write_method_frame(io, 0_u16, close_frame.to_payload)
         rescue

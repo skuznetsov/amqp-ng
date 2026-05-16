@@ -4,8 +4,8 @@
 > **Audience:** Implementers of the TLS wrap; callers configuring
 > production-grade transport security.
 > **Companions:** `docs/01-design-principles.md` (P-11 TLS is not
-> optional optional), `docs/04-uri-and-config.md` §3, §4 (URI keys and
-> EXTERNAL mechanism), `docs/06-connection-lifecycle.md` §3.2 (where
+> optional), `docs/04-uri-and-config.md` §3, §4 (URI and SASL
+> configuration), `docs/06-connection-lifecycle.md` §3.2 (where
 > in the handshake TLS sits), `docs/13-broker-compat-matrix.md` (per-
 > broker notes).
 
@@ -24,9 +24,9 @@ shard MUST:
 - Use `amqp` ⇒ TLS forbidden, default port 5672.
 - Reject `amqp` + `tls:` keyword as `Amqp::ConfigurationError`
   synchronously, before opening any socket.
-- Reject `amqps` + URI query TLS keys (`verify`, `cacertfile`, etc.)
-  when `tls:` keyword is also non-nil — see `docs/04-uri-and-config.md`
-  §3.
+- Reject URI query TLS policy keys (`verify`, `cacertfile`, `certfile`,
+  `keyfile`, `server_name`) as `Amqp::UriError`. v0 accepts either a
+  caller-supplied `tls:` context or the default context for `amqps://`.
 
 There is no "upgrade from plain to TLS" mode (STARTTLS-style) in AMQP
 0-9-1; the shard MUST NOT implement one.
@@ -52,41 +52,23 @@ The shard MUST use `ctx` as-is. It MUST NOT mutate the context after
 receiving it (no setting `verify_mode`, no setting cipher policy). The
 caller is fully responsible for TLS policy.
 
-### 2.2 URI-driven context
+### 2.2 Default context
 
 When `tls:` is `nil` AND the scheme is `amqps`, the shard constructs
-a context from URI query keys:
-
-```
-verify:      "peer" (default) | "none"
-cacertfile:  path to PEM with trust anchors
-certfile:    path to client certificate PEM (mTLS)
-keyfile:     path to client private-key PEM (mTLS)
-server_name: SNI override (default: URI host)
-```
-
-The construction (pseudocode):
+the default context:
 
 ```crystal
 ctx = OpenSSL::SSL::Context::Client.new
-ctx.verify_mode = case verify
-                  when "peer" then OpenSSL::SSL::VerifyMode::PEER
-                  when "none" then OpenSSL::SSL::VerifyMode::NONE
-                  end
 ctx.add_options(OpenSSL::SSL::Options::NO_SSL_V2 |
                 OpenSSL::SSL::Options::NO_SSL_V3 |
                 OpenSSL::SSL::Options::NO_TLS_V1 |
                 OpenSSL::SSL::Options::NO_TLS_V1_1)
 # TLS 1.2+ only; stdlib default cipher suite.
-ctx.ca_certificates    = cacertfile if cacertfile
-ctx.certificate_chain  = certfile   if certfile
-ctx.private_key        = keyfile    if keyfile
 ```
 
 The default cipher suite is whatever stdlib's
 `OpenSSL::SSL::Context::Client.new` configures; the shard MUST NOT
-weaken it. The shard MAY warn at `Log::Severity::Warn` if
-`verify == "none"` is selected.
+weaken it.
 
 ### 2.3 `tls_context_default`
 
@@ -94,13 +76,12 @@ weaken it. The shard MAY warn at `Log::Severity::Warn` if
 ctx = Amqp.tls_context_default
 ```
 
-Equivalent to §2.2 with `verify == "peer"`, no client cert, system CA
-store. The caller may mutate the returned context. This is provided so
-that callers wanting the shard's "good default" without parsing URI
-keys can start from a known-good context.
+Equivalent to §2.2. The caller may mutate the returned context. This
+is provided so callers wanting the shard's default TLS baseline can
+start from a known context without opening a connection.
 
 **Falsifier:** T-TLS-CTX-001 (caller-supplied passthrough),
-T-TLS-CTX-002 (URI-driven build), T-TLS-CTX-003 (default helper).
+T-TLS-CTX-002 (default build), T-TLS-CTX-003 (default helper).
 
 ---
 
@@ -124,7 +105,7 @@ Then writes the 8-byte AMQP protocol header (per
 ### 3.1 SNI
 
 The `hostname:` argument is mandatory. The shard MUST always pass
-`uri.host` (or the `server_name` query override). Some brokers behind
+`uri.host`. Some brokers behind
 a TLS-terminating load balancer rely on SNI to select the right
 backend or certificate; omitting SNI is a known production-incident
 pattern.
@@ -134,11 +115,11 @@ mock succeeds).
 
 ### 3.2 Hostname verification
 
-When `verify_mode == PEER`, OpenSSL's hostname verification (PHASE 5
-of RFC 5280) MUST be enabled — this is what makes `verify` meaningful.
-Stdlib's `OpenSSL::SSL::Socket::Client.new(..., hostname:)`
-implementation MUST set the verify-hostname property; the shard does
-not need to set it explicitly if the stdlib version already does so.
+When peer verification is enabled on the context, OpenSSL's hostname
+verification (PHASE 5 of RFC 5280) MUST be enabled. Stdlib's
+`OpenSSL::SSL::Socket::Client.new(..., hostname:)` implementation MUST
+set the verify-hostname property; the shard does not need to set it
+explicitly if the stdlib version already does so.
 
 For the floor Crystal version, the shard MUST audit that stdlib's
 `OpenSSL::SSL::Socket::Client` performs hostname verification by
@@ -177,53 +158,39 @@ is achieved by:
 2. Caller calls `Connection#close`.
 3. Caller calls `Amqp.connect` again (or `Recovery::Full` reconnects,
    in which case the recovery pipeline opens a fresh socket with a
-   freshly-constructed TLS context per §2.2 — important: under
-   recovery, the URI-driven path re-reads the cert files each
-   reconnect; the caller-supplied-context path uses the same context
-   object indefinitely).
+   freshly-constructed default context per §2.2, unless the caller
+   supplied a context object).
 
 This is a deliberate design choice. Re-reading cert files on a long-
 lived connection has no defined moment; renegotiation is deprecated
 in TLS 1.3 anyway. Callers that want zero-downtime rotation MUST
 schedule reconnects.
 
-**Falsifier:** T-TLS-ROTATE-001 — under `Recovery::Full` + URI-driven
-TLS, replacing the cert on disk and forcing a reconnect MUST use the
-new cert on the next handshake.
+**Falsifier:** T-TLS-ROTATE-001 — under `Recovery::Full`, a reconnect
+MUST use a fresh default context when no caller context was supplied.
 
 ---
 
-## 5. EXTERNAL mechanism interaction
+## 5. SASL interaction
 
-When `?auth_mechanism=EXTERNAL` is selected, the broker authenticates
-the client by its TLS certificate identity. Pre-conditions enforced
-synchronously (before socket I/O):
+v0 AMQP authentication uses PLAIN credentials even when transport is
+TLS-wrapped. A caller-supplied TLS context may include a client
+certificate for transport-level identity or broker-side policy, but
+the shard does not implement SASL EXTERNAL in v0.
 
-1. Scheme MUST be `amqps`.
-2. The TLS context MUST be configured with a client certificate:
-   - URI-driven path: `certfile=` AND `keyfile=` MUST both be present.
-   - Caller-supplied path: the context MUST have `certificate_chain`
-     set. The shard inspects this; if absent, raises
-     `Amqp::TlsConfigError`.
+`auth_mechanism=EXTERNAL`, `certfile`, `keyfile`, and related URI keys
+MUST raise `Amqp::UriError` because they are outside the v0 query
+surface.
 
-The `connection.start-ok` `response` field is empty (zero-length
-long-string) for EXTERNAL. The broker reads the cert during the
-TLS handshake and authorises the channel by the cert's identity.
-
-If the broker rejects (reply-code 403), the shard raises
-`Amqp::AuthenticationError`. The error message SHOULD include the
-broker's `reply_text` (often something like `"PLAIN login refused:
-user 'CN=foo,O=bar' - no permission to access '/'"`).
-
-**Falsifier:** T-TLS-EXTERNAL-001..003 (preconditions enforced, happy
-path, broker reject).
+**Falsifier:** T-SASL-PLAIN-001, T-URI-UNKNOWN-001.
 
 ---
 
 ## 6. TLS-specific stats
 
-`ConnectionStats` (`docs/19-observability.md`) MUST include, when
-the connection is TLS-wrapped:
+The richer `ConnectionStats` model in `docs/19-observability.md` is
+deferred. When it is implemented, it MUST include, when the connection
+is TLS-wrapped:
 
 - `tls_version` (e.g., `"TLSv1.3"`).
 - `tls_cipher` (e.g., `"TLS_AES_256_GCM_SHA384"`).
@@ -238,11 +205,10 @@ connections.
 
 ## 7. Anti-patterns
 
-- **Disabling peer verification in production.** `?verify=none`
-  exists for testing against self-signed brokers. Production
-  deployments MUST set `verify=peer` (the default). The shard logs
-  at `Log::Severity::Warn` when `verify=none` is selected, but does
-  not refuse.
+- **Disabling peer verification in production.** If a caller mutates
+  a TLS context to disable peer verification, that is entirely caller
+  policy. The shard's URI surface does not provide a `verify=none`
+  escape hatch in v0.
 - **Reusing a TLS context across connect attempts when files have
   rotated.** A caller-supplied context is bound to the cert it held
   at construction. After cert rotation, build a fresh context.
@@ -252,5 +218,5 @@ connections.
   5 s are risky for TLS connections.
 - **Adding custom cipher policies inline.** If a cipher restriction
   is needed, build the context externally and pass via `tls:`.
-  Pushing all that policy through URI query keys is not a
-  manageable surface.
+  Pushing all that policy through URI query keys is not part of the
+  v0 surface.

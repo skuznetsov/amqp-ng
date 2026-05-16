@@ -1,26 +1,68 @@
 # amqp
 
-Clean-design AMQP 0-9-1 client for Crystal. Status: **spec-driven design, pre-implementation.**
+Clean-design AMQP 0-9-1 client for Crystal. Status: **v0.1.0 release
+candidate for local `job_hunter` integration**.
 
-This shard does not yet have an implementation. The `docs/` directory holds
-the complete specification: every public guarantee, every wire-format
-detail, and a falsifier matrix that maps each normative claim to the
-smallest test that would break it. The intent is that an implementer
-(human or LLM) can produce a correct v0 from the docs alone, without
-consulting external AMQP references.
+This shard now has implementation code under `src/`, executable specs
+under `spec/`, and a still-normative design corpus under `docs/`. The
+project remains spec-driven: public guarantees should either have a
+focused falsifier in the spec suite or be explicitly cut/deferred in
+the docs. The current release priority is a small, honest AMQP 0-9-1
+surface for RabbitMQ and LavinMQ rather than a complete AMQP kitchen sink.
 
 ## What's in v0
 
-- AMQP 0-9-1 over TCP and TLS (`amqp://`, `amqps://`)
-- Publisher confirms (sync + async + fire-and-forget)
-- Topology recovery (opt-in)
-- Heartbeats (mandatory, fiber-driven)
+- AMQP 0-9-1 over TCP, with `amqps://` TLS support and a live TLS
+  broker spec gated by `AMQP_TLS_URL`
+- Publisher confirms: confirm mode, sync confirm, async confirm,
+  mandatory returns, nack/range settlement, and out-of-order guards
+- Topology recovery (opt-in), with v0 new operations during recovery
+  failing fast via `RecoveryInProgress`
+- Heartbeats (fiber-driven, monotonic-time based)
+- Queue/exchange declare, bind, unbind, delete, purge, publish,
+  consume, subscribe, get, ack, nack, reject
+- Practical `amqp-client.cr` migration helpers: `basic_*` aliases,
+  queue/exchange wrappers, work-pool `basic_consume`, return/cancel/close
+  callbacks, `channel.flow`, `basic.recover`, transactions, and IO publish
+  overloads
 - Native Crystal: fibers, `Channel(T)`, `Time::Span`, idiomatic exception
   hierarchy, no global singletons
 - Target brokers: RabbitMQ 3.13+, LavinMQ 2.x
 
+The URI query surface is intentionally narrow in v0:
+`heartbeat`, `channel_max`, `frame_max`, `connect_timeout`, `recovery`,
+`product`, and `information`. TLS policy is supplied through a caller
+`OpenSSL::SSL::Context::Client`, not URI query keys. SASL EXTERNAL is
+deferred; v0 uses PLAIN credentials.
+
 AMQP 1.0 is architecturally accounted for (see `docs/18-amqp-1-0-forward-plan.md`)
 but explicitly deferred to v1. AMQP 0-8 and 0-9 are non-goals.
+
+## Verification status
+
+Current local baseline:
+
+```sh
+crystal spec
+```
+
+passes with 174 examples, 0 failures, 0 errors, and 4 pending live/chaos
+broker specs by default. With `AMQP_TLS_URL` and optional
+`AMQP_TLS_CA_CERT`, the TLS pending spec runs; broker chaos fixtures are
+gated by `AMQP_CHAOS_DOCKER_CONTAINER`; the invasive backpressure
+timing harness remains gated by `AMQP_BACKPRESSURE_LIVE`.
+With all three local gates enabled against the project-owned RabbitMQ
+containers, the suite passes with 150 examples, 0 failures, 0 errors,
+and 0 pending.
+`crystal tool format --check src spec tools/perf_publish.cr`,
+`crystal build tools/perf_publish.cr --no-codegen --error-trace`, and
+`git diff --check` also pass. `../job_hunter` compiles its CLI entrypoint
+against this shard as a local path dependency.
+
+LavinMQ 2.4.0 is locally smoke-verified on plain AMQP: the default
+suite passes with 150 examples and 4 live-gated pending examples, and
+the opt-in backpressure plus Docker pause/restart chaos suite passes
+with only TLS pending. LavinMQ TLS is deferred from v0.1.0.
 
 ## Reading order
 
@@ -34,5 +76,8 @@ scope, forward plan, observability, risks.
 
 ## Status
 
-Pre-implementation. No code under `src/` yet. Specs are live; once they
-stabilise, implementation begins (humans or LLMs).
+v0.1.0 release candidate. See `TODO.md` for the working ledger and
+`LANDMARKS.md` for verified anchors, refutations, and deferred surface
+decisions. Known non-blocking follow-ups include a CI broker matrix,
+LavinMQ TLS, a reproducible perf harness, and broader reliability
+transcripts.

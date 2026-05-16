@@ -31,7 +31,9 @@ team. Lighter resource footprint, faster cold start, smaller surface
 (no advanced clustering, no plug-ins). Used in production by the
 shard author for some workloads.
 
-The shard's behavior is validated against LavinMQ 2.0.x.
+The shard's behavior is validated locally against LavinMQ 2.4.0.
+Older LavinMQ 2.x releases MAY work, but they are not verified in the
+current checkout until a pinned multi-version CI matrix is added.
 
 ---
 
@@ -51,9 +53,9 @@ For each feature, the table records:
 | AMQP 0-9 / 0-8                       | ✗ (removed)    | ✗           | Out of scope (`docs/00-overview.md` §1.1)  |
 | Heartbeats                           | ✓              | ✓           | `docs/10-heartbeats.md`                    |
 | Publisher confirms                   | ✓              | ✓           | `docs/08-publisher-confirms.md`            |
-| Transactions (`tx.*`)                | ✓              | ✓           | Out of v0 scope (`docs/17` §2.3)           |
+| Transactions (`tx.*`)                | ✓              | ✓           | Broker-native `tx_select/commit/rollback` |
 | Channel flow (`channel.flow`)        | ◐ (deprecated) | ✓           | Shard handles per `docs/07` §3.3           |
-| Connection blocked notifications     | ✓              | ✓           | Surfaced via `ConnectionStats#blocked?`    |
+| Connection blocked notifications     | ✓              | ✓           | `blocked?`, `on_blocked`, `on_unblocked`   |
 | Connection forced close (320)        | ✓              | ✓           | Recoverable per `docs/12` §2               |
 
 ### 2.2 SASL mechanisms
@@ -61,13 +63,14 @@ For each feature, the table records:
 | Mechanism      | RabbitMQ 3.13+      | LavinMQ 2.x  | Shard          |
 |----------------|---------------------|--------------|----------------|
 | PLAIN          | ✓                   | ✓            | ✓ (default)    |
-| EXTERNAL       | ✓ (via rabbitmq_auth_mechanism_ssl) | ✓ | ✓        |
+| EXTERNAL       | ✓ (via rabbitmq_auth_mechanism_ssl) | ✓ | ✗ (deferred) |
 | AMQPLAIN       | ✓                   | ✗            | ✗ (deferred)   |
 | ANONYMOUS      | ✗                   | ✗            | ✗              |
 | OAUTH2         | ✓ (via plug-in)     | ✗            | ✗ (deferred)   |
 
 RabbitMQ's EXTERNAL mechanism requires the `rabbitmq_auth_mechanism_ssl`
-plug-in to be enabled.
+plug-in to be enabled. The shard does not implement SASL EXTERNAL in
+v0.1.0; TLS client certificates remain transport-level policy only.
 
 ### 2.3 Exchange types
 
@@ -180,9 +183,9 @@ RabbitMQ implements `basic.recover-async`; LavinMQ implements only
 
 ## 4. Test policy
 
-The CI matrix runs every test in `spec/` against BOTH brokers. A
-test passing on one but not the other is treated as a divergence
-bug; the shard MUST resolve by either:
+The release test policy is to run every test in `spec/` against BOTH
+brokers. A test passing on one but not the other is treated as a
+divergence bug; the shard MUST resolve by either:
 
 - Conforming to common AMQP 0-9-1 behavior (most cases).
 - Skipping the test on the non-conforming broker with an explicit
@@ -192,15 +195,26 @@ bug; the shard MUST resolve by either:
 No test silently skips because of broker version. Every skip MUST
 have a documented reason.
 
+Current local evidence in this checkout:
+
+- RabbitMQ 3.13.7: default suite and opt-in TLS/backpressure/chaos
+  suites pass.
+- LavinMQ 2.4.0: default suite passes with the same live-gated
+  pending examples as RabbitMQ; opt-in backpressure and Docker
+  pause/restart chaos pass. LavinMQ TLS is not configured locally.
+
+A CI matrix for LavinMQ is not present yet; do not treat this document
+as proof that every commit is automatically checked against LavinMQ.
+
 ---
 
 ## 5. Broker versions tested against
 
-The exact image tags used in CI:
+Pinned image tags intended for CI:
 
 - `rabbitmq:3.13.7-management` (CI floor).
 - `rabbitmq:4.0.5-management` (CI latest stable).
-- `cloudamqp/lavinmq:2.0.3` (CI floor + latest).
+- `cloudamqp/lavinmq:2.4.0` (currently locally verified).
 
 The CI workflow MUST pin these tags rather than `latest` so the
 matrix is deterministic. Upgrading the pinned versions is a

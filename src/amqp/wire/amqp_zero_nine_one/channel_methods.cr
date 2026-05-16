@@ -3,12 +3,12 @@ require "./types"
 require "./connection_methods"
 
 module Amqp::Wire::AmqpZeroNineOne
-  METHOD_ID_CHANNEL_OPEN      = 10_u16
-  METHOD_ID_CHANNEL_OPEN_OK   = 11_u16
-  METHOD_ID_CHANNEL_FLOW      = 20_u16
-  METHOD_ID_CHANNEL_FLOW_OK   = 21_u16
-  METHOD_ID_CHANNEL_CLOSE     = 40_u16
-  METHOD_ID_CHANNEL_CLOSE_OK  = 41_u16
+  METHOD_ID_CHANNEL_OPEN     = 10_u16
+  METHOD_ID_CHANNEL_OPEN_OK  = 11_u16
+  METHOD_ID_CHANNEL_FLOW     = 20_u16
+  METHOD_ID_CHANNEL_FLOW_OK  = 21_u16
+  METHOD_ID_CHANNEL_CLOSE    = 40_u16
+  METHOD_ID_CHANNEL_CLOSE_OK = 41_u16
 
   module ChannelMethods
     extend self

@@ -101,8 +101,11 @@ A channel has at most one "method continuation" outstanding at a
 time. When a fiber blocks on `publish_confirm`, `queue.declare-ok`,
 `basic.get-ok/get-empty`, etc., it owns the inbox until its reply
 arrives. The implementation MUST enforce this via a per-channel
-state lock; concurrent state-changing operations MUST raise
-`Amqp::ConcurrencyError`.
+state lock; concurrent state-changing operations that await a broker
+continuation MUST raise `Amqp::ConcurrencyError`. Fire-and-forget
+`publish` / non-confirm `publish_batch` do not own the inbox and MAY
+run concurrently if the implementation serialises each publish's
+method/header/body frame sequence under the connection write mutex.
 
 **Falsifier:** T-CHAN-CONCURRENCY-001 — two fibers call
 `queue_declare` on the same channel simultaneously; the second
@@ -133,8 +136,8 @@ pause publishing. The shard MUST:
 4. On `channel.flow(active=true)`, send `channel.flow-ok(active=true)`,
    update state back, wake blocked publishers.
 
-The block IS visible to callers as latency. The shard MUST update
-`ChannelStats#flow_paused?` so observability is possible.
+The block IS visible to callers as latency. Public `ChannelStats`
+observability is deferred in v0.
 
 RabbitMQ 3.x has effectively deprecated `channel.flow` (it uses TCP
 backpressure instead), but LavinMQ may use it; the shard MUST handle
@@ -142,6 +145,14 @@ both correctly.
 
 **Falsifier:** T-CHAN-FLOW-001 — synthetic broker sends `flow(false)`;
 verify publishes block; sends `flow(true)`; verify publishes resume.
+
+The public `Channel#flow(active : Bool)` method sends client-initiated
+`channel.flow` and waits for `channel.flow-ok`. It exists for
+amqp-client.cr compatibility and broker-specific tests; ordinary
+RabbitMQ deployments should not use it as a throughput control surface.
+
+**Falsifier:** T-CHAN-FLOW-002 — live broker accepts
+`Channel#flow(true)` and replies with `channel.flow-ok`.
 
 ---
 
@@ -156,14 +167,13 @@ Each `Channel` instance owns:
 - `consumer_registry`: a map of `consumer_tag → Subscription` for
   active consumers on this channel.
 - `prefetch`: the last value sent via `basic.qos`.
-- `stats : Atomic-backed ChannelStats counters`.
+- connection-level `Amqp::Stats` counters for v0-observed events.
 - `inbox : ::Channel(Frame)` — owned by the channel but allocated by
   the connection.
 
 The `Channel` MUST NOT hold a reference to any user-supplied object
-beyond what the public API mandates (Subscriptions, callbacks). In
-particular, `Channel` MUST NOT capture closures that outlive the
-channel's lifetime.
+beyond what the public API mandates: active `Subscription` objects and
+registered callbacks such as `on_return`, `on_cancel`, and `on_close`.
 
 ---
 
@@ -177,18 +187,20 @@ The shard MUST:
 
 1. Atomically transition channel state to `Closing`.
 2. Send `channel.close-ok`.
-3. Drain the inbox; deliveries already on it are discarded (the
+3. Dispatch `Channel#on_close(reply_code, reply_text)` on a separate
+   fiber if a callback is registered.
+4. Drain the inbox; deliveries already on it are discarded (the
    consumer is dead — the broker won't requeue them automatically,
    but it WILL re-queue any unacked deliveries when the channel
    closes, per AMQP semantics).
-4. Wake every blocked fiber on this channel with the appropriate
+5. Wake every blocked fiber on this channel with the appropriate
    exception subclass (per the reply-code mapping).
-5. Cancel every active Subscription on this channel; their
+6. Cancel every active Subscription on this channel; their
    `closed?` flag becomes `true` and pending `receive` calls raise
    `Amqp::SubscriptionClosed` (which itself carries the
    `Amqp::ChannelError` as `cause`).
-6. Transition `Closing → Closed`; populate `close_reason`.
-7. Deallocate the channel-id with the host connection (recovery may
+7. Transition `Closing → Closed`; populate `close_reason`.
+8. Deallocate the channel-id with the host connection (recovery may
    reuse it).
 
 The connection is NOT closed by a channel-level error; only this
@@ -212,7 +224,8 @@ matrix).
 1. Atomically transition `Open` (or `Confirms` or `Flowing`) →
    `Closing`. If already non-`Open`, return silently.
 2. If the host connection is `Closed`, transition directly to `Closed`
-   with `close_reason.origin == Caller` and return silently.
+   with `ChannelClosedByCaller` where a reason is needed and return
+   silently.
 3. Send `channel.close(reply_code, reply_text, class_id=0, method_id=0)`.
 4. Wait up to `connection.heartbeat` (or 5 s if 0) for
    `channel.close-ok`.
@@ -232,9 +245,9 @@ The caller's `close` returns normally even on `close-ok` timeout
 
 When the host connection enters `Closed` (any pathway), every
 `Channel` on it MUST transition to `Closed` synchronously as part of
-the connection-close cleanup. The channel's `close_reason.origin`
-inherits the connection's origin (`Broker`, `Network`, `Heartbeat`,
-`Caller`).
+the connection-close cleanup. The channel's `close_reason` is the
+typed exception propagated from the connection cleanup path where one
+is available.
 
 Pending operations on these channels MUST be woken with the matching
 exception subclass.

@@ -10,6 +10,17 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     (bytes[12].to_u16 << 8 | bytes[13].to_u16).should eq(0_u16)
   end
 
+  it "write_empty_frame matches the generic frame encoder for empty properties" do
+    payload = CH.encode(60_u16, 123_u64, Amqp::Properties.new)
+    expected = IO::Memory.new
+    Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Header, 9_u16, payload).write(expected)
+
+    actual = IO::Memory.new
+    CH.write_empty_frame(actual, 9_u16, 60_u16, 123_u64)
+
+    actual.to_slice.should eq(expected.to_slice)
+  end
+
   it "content-type + persistent → flags 0x9000" do
     props = Amqp::Properties.new(
       content_type: "text/plain",
@@ -62,7 +73,7 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
   it "rejects weight != 0 on decode" do
     raw = IO::Memory.new
     raw.write_bytes(60_u16, IO::ByteFormat::NetworkEndian)
-    raw.write_bytes(1_u16, IO::ByteFormat::NetworkEndian)  # bad weight
+    raw.write_bytes(1_u16, IO::ByteFormat::NetworkEndian) # bad weight
     raw.write_bytes(0_u64, IO::ByteFormat::NetworkEndian)
     raw.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
     expect_raises(Amqp::ProtocolError, /weight/) do
@@ -75,7 +86,7 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     raw.write_bytes(60_u16, IO::ByteFormat::NetworkEndian)
     raw.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
     raw.write_bytes(0_u64, IO::ByteFormat::NetworkEndian)
-    raw.write_bytes(0x0001_u16, IO::ByteFormat::NetworkEndian)  # continuation set
+    raw.write_bytes(0x0001_u16, IO::ByteFormat::NetworkEndian) # continuation set
     expect_raises(Amqp::ProtocolError, /continuation/) do
       CH.decode(raw.to_slice)
     end

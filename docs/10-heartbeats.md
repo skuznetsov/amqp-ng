@@ -73,7 +73,7 @@ loop do
   when stop_chan.receive
     break
   when timeout(heartbeat / 2)
-    now = Time.monotonic
+    now = Time.instant
     if now - last_write_at >= heartbeat / 2
       write_heartbeat_frame
     end
@@ -89,8 +89,8 @@ Key rules:
   `docs/05-wire-0-9-1/00-frames.md`.
 - **Coalescing.** The shard MUST NOT send a heartbeat if it has
   already written a frame within the last `heartbeat / 2` seconds.
-  `last_write_at` is an `Atomic(Int64)` (Unix nanos) updated by
-  every successful socket write. This avoids redundant writes during
+  `last_write_at` is a monotonic `Time::Instant` updated by every
+  successful socket write. This avoids redundant writes during
   high-traffic periods.
 - **Locking.** The heartbeat send uses the connection-level write
   mutex like any other frame. Contention with publishes is bounded
@@ -108,16 +108,16 @@ close).
 
 ## 4. Receive deadline mechanics
 
-The frame-reader fiber updates `last_received_ns` (an `Atomic(Int64)`)
-on EVERY successful frame read — method, header, body, OR heartbeat.
-The heartbeat fiber reads `last_received_ns` each iteration:
+The frame-reader fiber updates `last_received_at` (a monotonic
+`Time::Instant`) on EVERY successful frame read — method, header,
+body, OR heartbeat. The heartbeat fiber reads `last_received_at` each
+iteration:
 
 ```crystal
 def check_receive_deadline
   return if heartbeat.zero?
-  deadline_ns = last_received_ns.get + (heartbeat * 2).total_nanoseconds.to_i64
-  now_ns = Time.monotonic.to_unix_ns        # monotonic time, comparable
-  if now_ns >= deadline_ns
+  deadline = last_received_at + (heartbeat * 2)
+  if Time.instant >= deadline
     raise_heartbeat_timeout
   end
 end
@@ -128,20 +128,20 @@ The `raise_heartbeat_timeout` action:
 1. Atomically transition `Open → Closing`.
 2. Close the socket (without writing `connection.close` — the broker
    is presumed dead).
-3. Wake all blocked fibers with `Amqp::HeartbeatTimeoutError` whose
-   `close_reason.origin == Heartbeat`.
+3. Wake all blocked fibers with `Amqp::HeartbeatTimeoutError`.
 4. Stop the frame-reader fiber (it will see EOF on its next read and
    exit cleanly).
 5. Stop self after the wakeups complete.
 
-**Time semantics.** All times are `Time.monotonic`. The shard MUST
-NOT use `Time.utc` / wall-clock time for deadlines: NTP step
-adjustments would cause spurious timeouts or missed timeouts.
+**Time semantics.** All deadline and idle measurements use
+`Time.instant` / `Time::Instant`. The shard MUST NOT use `Time.utc` /
+wall-clock time for deadlines: NTP step adjustments would cause
+spurious timeouts or missed timeouts.
 
 **Falsifier:** T-HB-RECV-001 (timeout fires when broker stops sending),
 T-HB-RECV-002 (no false positive under sustained activity),
 T-HB-RECV-003 (wall-clock jump does not affect deadline),
-T-HB-RECV-004 (`HeartbeatTimeoutError.close_reason.origin == Heartbeat`).
+T-HB-RECV-004 (blocked operations observe `HeartbeatTimeoutError`).
 
 ---
 

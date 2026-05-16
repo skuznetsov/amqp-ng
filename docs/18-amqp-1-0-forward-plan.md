@@ -138,12 +138,12 @@ doc set does NOT reserve those names — that decision is v1's.
 
 ### 3.7 Observability surface
 
-`ConnectionStats` / `ChannelStats` / `SubscriptionStats`
-(`docs/19-observability.md`) carry fields like `frame_max` and
-`channel_max` that are 0-9-1-specific. v1 will introduce
-1.0-specific stats (`max-frame-size`, `max-handle-per-session`)
-under either new fields with `_v1` suffixes OR a separate stats
-struct returned by a v1-specific method.
+The current v0 observability surface is the reduced `Amqp::Stats`
+snapshot described in `docs/19-observability.md`; richer
+`ConnectionStats` / `ChannelStats` / `SubscriptionStats` types are
+deferred. Any future v1 observability surface must keep 0-9-1-specific
+fields such as `frame_max` and `channel_max` separate from 1.0-specific
+fields such as `max-frame-size` and `max-handle-per-session`.
 
 The decision is deferred. The v0 fields MUST NOT be renamed for
 forward-compatibility hopes; rename is a 1.0 problem.
@@ -193,9 +193,10 @@ features. v1 is started only when:
 2. There is a concrete v1 use case the author wants to ship
    (currently: none).
 
-The doc set will be extended with `docs/21-amqp-1-0-overview.md`
-(and a `05-wire-1-0/` subtree) when v1 work begins. v0's doc set is
-not retroactively renumbered.
+The doc set now has `docs/22-amqp-1-0-sdd.md` as the v1 planning
+contract. When implementation begins, it will grow a `docs/05-wire-1-0/`
+subtree and executable `spec/amqp10/` falsifiers. v0's doc set is not
+retroactively renumbered.
 
 ---
 

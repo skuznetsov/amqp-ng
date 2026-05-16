@@ -9,12 +9,16 @@ module Amqp
     end
 
     getter consumer_tag : String
+    getter channel : Channel
+    getter queue : String
     @channel : Channel
     @mailbox : ::Channel(Delivery)
+    @capacity : Int32
     @closed : Bool
 
-    protected def initialize(@channel : Channel, @consumer_tag : String)
-      @mailbox = ::Channel(Delivery).new(1024)
+    protected def initialize(@channel : Channel, @consumer_tag : String, @queue : String = "", capacity : Int32 = 16)
+      @capacity = capacity
+      @mailbox = ::Channel(Delivery).new(capacity)
       @closed = false
     end
 
@@ -24,15 +28,22 @@ module Amqp
     end
 
     def receive : Delivery
-      raise Closed.new("subscription #{@consumer_tag} closed") if @closed && @mailbox.empty?
       msg = @mailbox.receive?
       raise Closed.new("subscription #{@consumer_tag} closed") if msg.nil?
       msg
     end
 
     def receive? : Delivery?
-      return nil if @closed && @mailbox.empty?
       @mailbox.receive?
+    end
+
+    # Select support for `select; when msg = sub.receive; ...; end`.
+    def receive_select_action
+      @mailbox.receive_select_action
+    end
+
+    def receive_select_action?
+      @mailbox.receive_select_action?
     end
 
     protected def mark_closed : Nil
@@ -45,7 +56,7 @@ module Amqp
     # the broker on the new session won't recognize.
     protected def reset_mailbox : Nil
       old = @mailbox
-      @mailbox = ::Channel(Delivery).new(1024)
+      @mailbox = ::Channel(Delivery).new(@capacity)
       old.close rescue nil
     end
 
@@ -57,5 +68,21 @@ module Amqp
       return if @closed
       @channel.cancel(@consumer_tag)
     end
+
+    def each(& : Delivery -> _) : Nil
+      loop do
+        yield receive
+      rescue Closed
+        break
+      end
+    end
+
+    def spawn_loop(& : Delivery -> _) : Nil
+      spawn(name: "amqp-subscription-#{@consumer_tag}") do
+        each { |delivery| yield delivery }
+      end
+    end
   end
+
+  alias SubscriptionClosed = Subscription::Closed
 end

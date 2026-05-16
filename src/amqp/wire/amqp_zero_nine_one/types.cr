@@ -129,9 +129,9 @@ module Amqp::Wire::AmqpZeroNineOne::Types
       nil
     when 0x78_u8 # 'x' byte-array (RabbitMQ extension)
       read_longstr_bytes(io)
-    when 0x44_u8 # 'D' decimal — NOT SUPPORTED in v0 (see docs/05-wire-0-9-1/01-types.md §5)
-      io.read_byte                                                  # scale
-      io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian)          # value
+    when 0x44_u8                                           # 'D' decimal — NOT SUPPORTED in v0 (see docs/05-wire-0-9-1/01-types.md §5)
+      io.read_byte                                         # scale
+      io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian) # value
       raise Amqp::ProtocolError.new("AMQP 'D' (decimal) field-value not supported in v0")
     else
       raise Amqp::ProtocolError.new("unknown field-value tag 0x#{tag.to_s(16)}")
