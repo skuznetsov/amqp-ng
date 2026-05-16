@@ -261,8 +261,8 @@ The implementation contract:
   for the mutex like any other writer.
 
 This is the only intentional serialisation point in v0; see
-`docs/14-performance-contract.md` PERF-4 for the implication on
-multi-channel throughput.
+`docs/14-performance-contract.md` §5 and `tools/perf_publish.cr` for the
+current multi-channel throughput roadmap and local witness harness.
 
 ---
 

@@ -18,7 +18,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `shard.yml`, `src/amqp.cr`, `CHANGELOG.md`, and `docs/17-mvp-cutline.md`.
   - Evidence: `cd ../job_hunter && shards install` installs `amqp (0.1.0 at ../amqp-ng)`.
   - Evidence: `cd ../job_hunter && crystal build src/cli.cr --no-codegen --error-trace` exits 0.
-  - Evidence: default `crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current default `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: RabbitMQ opt-in TLS/backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: LavinMQ 2.4.0 opt-in backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
 
@@ -31,10 +31,9 @@ Status: active working ledger for `amqp-ng`.
 - [x] Re-run the full current verification baseline.
   - DoD: `crystal spec` exits 0.
   - DoD: `crystal tool format --check` status is documented as current pass/fail, with pre-existing failures separated from new failures.
-  - Evidence: latest default full `crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 4 pending.
-  - Evidence: local full opt-in `AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-rabbit AMQP_TLS_URL='amqps://guest:guest@localhost:5671/' AMQP_TLS_CA_CERT='.tmp/rabbitmq_tls/certs/ca_certificate.pem' timeout 180 crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
-  - Evidence: LavinMQ 2.4.0 local default `AMQP_URL='amqp://guest:guest@127.0.0.1:5673/' timeout 180 crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 4 pending.
-  - Evidence: LavinMQ 2.4.0 local opt-in backpressure/chaos `AMQP_URL='amqp://guest:guest@127.0.0.1:5673/' AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-lavinmq timeout 180 crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
+  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: earlier local full opt-in `AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-rabbit AMQP_TLS_URL='amqps://guest:guest@localhost:5671/' AMQP_TLS_CA_CERT='.tmp/rabbitmq_tls/certs/ca_certificate.pem' timeout 180 crystal spec` exited 0 before later parity additions; re-run before public release.
+  - Evidence: earlier LavinMQ 2.4.0 default and opt-in backpressure/chaos suites passed before later parity additions; re-run after broker-compat changes.
   - Evidence: `crystal tool format --check src spec` exits 0.
 
 - [x] Finish API-to-doc surface audit.
@@ -89,14 +88,14 @@ Status: active working ledger for `amqp-ng`.
   - Scope: `README.md` no longer describes the project as pre-implementation.
   - DoD: README status matches the current implementation and verification state.
   - Evidence: `README.md` describes active v0 implementation, current verified spec count, clean format status, and remaining high-risk areas.
-  - Evidence: latest default full `crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
 
 - [x] Decide whether performance claims belong in v0 docs.
   - Problem: `docs/14-performance-contract.md` names concrete throughput targets without a shipped harness.
   - DoD: either add a runnable harness with reproducibility notes or downgrade claims to roadmap/non-normative.
   - Decision: downgrade to roadmap/non-normative until `spec/perf/` exists.
   - Evidence: `docs/14-performance-contract.md` is now "Performance Roadmap"; `docs/16-falsifier-matrix.md` marks `T-PERF-*` rows as reserved roadmap falsifiers.
-  - Evidence: latest default full `crystal spec` exits 0: 150 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
 
 ## Backlog
 

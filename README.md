@@ -1,7 +1,7 @@
 # amqp
 
-Clean-design AMQP 0-9-1 client for Crystal. Status: **v0.1.0 release
-candidate for local `job_hunter` integration**.
+Clean-design AMQP 0-9-1 client for Crystal. Status: **v0.1.0 local
+release for `job_hunter` integration**.
 
 This shard now has implementation code under `src/`, executable specs
 under `spec/`, and a still-normative design corpus under `docs/`. The
@@ -52,17 +52,19 @@ broker specs by default. With `AMQP_TLS_URL` and optional
 gated by `AMQP_CHAOS_DOCKER_CONTAINER`; the invasive backpressure
 timing harness remains gated by `AMQP_BACKPRESSURE_LIVE`.
 With all three local gates enabled against the project-owned RabbitMQ
-containers, the suite passes with 150 examples, 0 failures, 0 errors,
-and 0 pending.
+containers, the suite last passed before the parity additions with all
+live-gated examples enabled. Re-run that opt-in gate before publishing
+a public release artifact.
 `crystal tool format --check src spec tools/perf_publish.cr`,
 `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and
 `git diff --check` also pass. `../job_hunter` compiles its CLI entrypoint
 against this shard as a local path dependency.
 
-LavinMQ 2.4.0 is locally smoke-verified on plain AMQP: the default
-suite passes with 150 examples and 4 live-gated pending examples, and
-the opt-in backpressure plus Docker pause/restart chaos suite passes
-with only TLS pending. LavinMQ TLS is deferred from v0.1.0.
+LavinMQ 2.4.0 is locally smoke-verified on plain AMQP from the earlier
+release baseline: the default suite and the opt-in backpressure plus
+Docker pause/restart chaos suite passed, with only TLS pending. Re-run
+the LavinMQ gate after broker-compat changes. LavinMQ TLS is deferred
+from v0.1.0.
 
 ## Reading order
 
@@ -76,7 +78,7 @@ scope, forward plan, observability, risks.
 
 ## Status
 
-v0.1.0 release candidate. See `TODO.md` for the working ledger and
+v0.1.0 local release branch. See `TODO.md` for the working ledger and
 `LANDMARKS.md` for verified anchors, refutations, and deferred surface
 decisions. Known non-blocking follow-ups include a CI broker matrix,
 LavinMQ TLS, a reproducible perf harness, and broader reliability

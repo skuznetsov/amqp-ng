@@ -4,13 +4,13 @@ Verified anchors and reusable refutations for `amqp-ng`.
 
 ## Active Landmarks
 
-- [LM-001|loc] The repository has implementation code and specs, not only design prose. Evidence: `rg --files` shows `src/amqp*.cr` and `spec/**/*.cr`; `README.md` now says "v0.1.0 release candidate for local job_hunter integration". Trust `{F:0.9,G:0.8,R:0.9}`. Status: verified 2026-05-15; decay trigger: README/status rewrite or implementation removal.
+- [LM-001|loc] The repository has implementation code and specs, not only design prose. Evidence: `rg --files` shows `src/amqp*.cr` and `spec/**/*.cr`; `README.md` now says "v0.1.0 local release for job_hunter integration". Trust `{F:0.9,G:0.8,R:0.9}`. Status: verified 2026-05-16; decay trigger: README/status rewrite or implementation removal.
 
 - [LM-002|loc] No root `TODO.md` or `LANDMARKS.md` existed before this ledger was created. Evidence: `find . -maxdepth 1 \( -name 'TODO.md' -o -name 'LANDMARKS.md' \) -print` returned empty before creation. Trust `{F:1.0,G:1.0,R:1.0}`. Status: verified 2026-05-15; decay trigger: this file pair exists now.
 
 - [LM-003|pattern] The docs contain many normative falsifier IDs, but the live spec tree is not organized by the documented matrix paths such as `spec/api/`, `spec/publisher/`, or `spec/reliability/`. Evidence: `docs/16-falsifier-matrix.md` names those paths; `rg --files spec` shows flat/current spec layout. Trust `{F:0.8,G:0.7,R:0.9}`. Status: verified 2026-05-15; decay trigger: spec tree restructuring.
 
-- [LM-004|refute] README honesty drift was corrected: the README no longer claims pre-implementation and now reports active v0 implementation plus known verification/formatting gaps. Evidence: `README.md`; latest default `crystal spec` passes at 150 examples. Trust `{F:0.9,G:0.8,R:0.9}`. Status: verified 2026-05-15; decay trigger: README/status rewrite or implementation removal.
+- [LM-004|refute] README honesty drift was corrected: the README no longer claims pre-implementation and now reports active v0 implementation plus current default verification and opt-in broker gates that need rerun before public release. Evidence: `README.md`; current default `crystal spec --error-trace` passes at 174 examples. Trust `{F:0.9,G:0.8,R:0.9}`. Status: verified 2026-05-16; decay trigger: README/status rewrite or implementation removal.
 
 - [LM-005|goal] Current working slice is "bring the public API and behavioral specs into alignment before expanding implementation". Evidence: user request to align API to docs and then quadrumvirate missing spec risks. Trust `{F:0.6,G:0.8,R:0.7}`. Status: active; decay trigger: user changes project priority.
 

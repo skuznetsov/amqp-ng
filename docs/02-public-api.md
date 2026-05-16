@@ -557,12 +557,12 @@ end
   any buffered deliveries already on the inbox (those buffered
   deliveries MUST still be receivable until the inbox is empty, after
   which further `receive` calls raise `Amqp::SubscriptionClosed`).
-- `spawn_loop` is the only public spawn site. Its semantics: spawn one
-  fiber that loops `receive`-and-yield until the subscription closes;
-  exceptions from the user block terminate that spawned fiber. v0 does
-  not provide an `on_terminate` callback or automatic reject policy for
-  `spawn_loop`; callers that need explicit exception handling should
-  spawn their own loop around `receive`.
+- `spawn_loop` is the explicit detached-subscription helper. Its
+  semantics: spawn one fiber that loops `receive`-and-yield until the
+  subscription closes; exceptions from the user block terminate that
+  spawned fiber. v0 does not provide an `on_terminate` callback or
+  automatic reject policy for `spawn_loop`; callers that need explicit
+  exception handling should spawn their own loop around `receive`.
 
 ---
 
@@ -622,6 +622,7 @@ struct Amqp::Properties
   getter content_type : String?
   getter content_encoding : String?
   getter headers : Arguments?
+  getter delivery_mode : Persistence?
   getter persistence : Persistence?              -- maps to delivery_mode
   getter priority : UInt8?
   getter correlation_id : String?
@@ -638,10 +639,11 @@ struct Amqp::Properties
 end
 ```
 
-- `persistence: Persistence::Persistent` maps to AMQP `delivery_mode = 2`;
-  `Persistence::Transient` maps to `1`; `nil` omits the field (broker
-  treats it as transient). The shard MUST NOT expose the raw integer
-  `delivery_mode` on the public surface (P-1).
+- `persistence: Persistence::Persistent` and
+  `delivery_mode: Persistence::Persistent` both map to AMQP
+  `delivery_mode = 2`; `Persistence::Transient` maps to `1`; `nil`
+  omits the field (broker treats it as transient). The shard exposes
+  the typed enum only, never a raw integer `delivery_mode`.
 - `expiration` is a `String` because the AMQP 0-9-1 wire encoding for
   this field is a short-string of decimal milliseconds; offering a
   `Time::Span` overload that silently rounds is too easy to abuse.
@@ -654,7 +656,7 @@ end
 ```crystal
 alias Amqp::FieldValue =
   Bool | Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 |
-  Int64 | UInt64 | Float32 | Float64 |
+  Int64 | Float32 | Float64 |
   String | Bytes | Time | Nil |
   Array(Amqp::FieldValue) | Hash(String, Amqp::FieldValue)
 

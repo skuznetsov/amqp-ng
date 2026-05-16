@@ -214,14 +214,12 @@ The spec defines `D` as `Int8 scale + UInt32 value`, representing
 the rational `value × 10^(-scale)`. v0 does NOT support `D` in either
 encoding or surface API:
 
-- The codec MUST decode `D` to a tagged "unsupported decimal"
-  placeholder and either:
-  - Drop the entry from the resulting `Arguments` (logged at `Debug`), OR
-  - Raise `Amqp::ProtocolError` if the entry is in a method-argument
-    position that the caller actually reads.
+- The codec MUST raise `Amqp::ProtocolError` when it decodes a `D`
+  field-value.
 - The codec MUST NOT emit `D` on the encode path. A caller who tries
-  to put a `BigDecimal`-shaped value into `Arguments` receives
-  `Amqp::ConfigurationError` at the API boundary.
+  to put a BigDecimal-shaped value into `Arguments` has no accepted
+  `FieldValue` union member for it; unsupported values fail at compile
+  time or at the explicit field-value encoder boundary.
 
 This is a deliberate v0 limitation; see `docs/20-risk-register.md`
 RISK-3. The vast majority of `Arguments` use cases (queue arguments,

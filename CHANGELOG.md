@@ -34,6 +34,7 @@ First usable AMQP 0-9-1 release for local `job_hunter` integration.
   4 live-gated pending.
 - LavinMQ 2.4.0 opt-in backpressure/chaos suite: 150 examples,
   0 failures, 0 errors, 1 pending for LavinMQ TLS.
+
 ### Deferred
 
 - SASL EXTERNAL.

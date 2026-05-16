@@ -79,16 +79,18 @@ bump the public API doc.
 
 ## 4. RISK-4: Connection write-mutex contention at high channel count
 
-**Description.** P-4 (PERF-4) claims 8-channel publish scales to
-~600k msg/s. Beyond 8 channels, the connection-level write mutex
-becomes the dominant serialiser; performance plateaus or regresses.
+**Description.** Local benchmarks show one connection has a real
+write-serialization ceiling. Beyond a small number of publishing
+fibers/channels, the connection-level write mutex and socket path
+become dominant; performance plateaus or regresses.
 
-**Mitigation.** Documented in `docs/14-performance-contract.md` §5
-that PERF-4 is the upper-bound claim; no claim made for channel
-counts > 8.
+**Mitigation.** `docs/14-performance-contract.md` §5 is a roadmap
+target, not a v0 release guarantee. `tools/perf_publish.cr` compares
+single-channel, multi-channel, and multi-connection modes; callers who
+need higher aggregate throughput should shard across connections.
 
-**Severity.** Medium (callers who need > 600k msg/s aggregate are
-expected to use multiple connections, which is normal practice).
+**Severity.** Medium (high-throughput callers may need multiple
+connections, which is normal practice).
 
 **Likelihood.** N/A — design choice.
 
@@ -101,24 +103,24 @@ fanning into the socket).
 
 ## 5. RISK-5: Slow subscriber backpressure affecting other channels
 
-**Description.** A slow `Subscription` whose buffer fills causes the
-frame-reader fiber to block on the inbox send, which blocks frame
-reading for ALL channels on the connection. Publisher confirms on
-unrelated channels stall.
+**Description.** A slow `Subscription` whose buffer fills first blocks
+its per-channel handler on the subscription inbox. If the channel frame
+inbox also fills, pressure can propagate to the connection reader and
+then affect other channels on the same connection.
 
-**Mitigation.** Documented in `docs/09-consumer.md` §3.4 with a
-recommendation to allocate a dedicated `Connection` for high-
-throughput consumers. The default `buffer: 16` is small enough that
-slow consumers surface quickly (caller notices when their queue
-backs up).
+**Mitigation.** Documented in `docs/09-consumer.md` §3.4. The default
+`buffer: 16` is small enough that slow consumers surface quickly
+(caller notices when their queue backs up). High-throughput or
+potentially slow consumers can use a dedicated channel or connection.
 
 **Severity.** Medium (operationally annoying, not a correctness
 issue).
 
 **Likelihood.** Medium (worker code with intermittent slow paths).
 
-**Status.** Accepted by design with documentation. Falsifier
-`T-CONS-BACKPRESSURE-001` documents the behavior as observable.
+**Status.** Partially verified. The live harness covers the
+per-channel-first claim; full channel-inbox saturation remains a
+future process-isolated measurement.
 
 ---
 

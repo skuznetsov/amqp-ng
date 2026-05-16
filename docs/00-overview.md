@@ -38,9 +38,10 @@ The design priorities, in strict order:
    complete when enabled. The shard MUST NOT silently swallow broker
    close-reasons; every fatal condition surfaces as an exception in
    the iterating fiber.
-4. **Performance.** Performance is a normative property, not a slogan.
-   `docs/14-performance-contract.md` enumerates measurable bounds
-   (PERF-1..PERF-N) with falsifier benchmarks.
+4. **Performance.** Performance must be measurable before it becomes a
+   release guarantee. `docs/14-performance-contract.md` currently lists
+   non-normative roadmap targets; `tools/perf_publish.cr` is the local
+   witness harness until a reproducible `spec/perf/` suite exists.
 
 ### 1.1 Non-goals
 
@@ -135,19 +136,21 @@ The shard MUST use exactly the following fibers per `Connection`:
   via `Atomic(Int64)` (Unix nanos) to detect broker silence; on timeout
   raises `Amqp::HeartbeatTimeoutError` into all channels and tears the
   connection down.
-- Zero or more **consumer-loop** fibers, one per `consume` call. Each
-  reads `Frame`s from its `Subscription`'s `Channel(DeliverMessage)` and
-  yields to the user block. The Crystal fiber doing the `consume` call
-  IS the loop; spawning happens only when the user opts into a
-  detached consumer via `subscribe(...).spawn { |msg| ... }`.
+- Zero or more **consumer-loop** fibers. The block-form
+  `Channel#consume` runs on the caller's fiber. `basic_consume` with
+  `work_pool:` spawns worker fibers for amqp-client.cr compatibility.
+  `Subscription#spawn_loop` is the explicit detached-subscription helper.
+- Short-lived callback fibers for return, cancel, close, and connection
+  blocked/unblocked callbacks. User callbacks are not run on the frame
+  handler fiber.
 
-No additional fibers are permitted in v0. Writes to the socket happen
-on the **caller's** fiber under a connection-level `Mutex`; this keeps
-the design simple and avoids a write-fan-in fiber that would add a
-hop to the publish hot path.
+Writes to the socket happen on the **caller's** fiber under a
+connection-level `Mutex`; this keeps the design simple and avoids a
+write-fan-in fiber that would add a hop to the publish hot path.
 
-`docs/14-performance-contract.md` PERF-4 falsifies the multi-channel
-throughput claim against this topology.
+`docs/14-performance-contract.md` now treats multi-channel throughput as
+a roadmap target. Current measured evidence lives in `tools/perf_publish.cr`
+and `LANDMARKS.md`, not as a v0 release guarantee.
 
 ### 2.3 Concurrency contract
 
