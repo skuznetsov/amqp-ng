@@ -67,7 +67,6 @@ module Amqp
     @heartbeat_done : ::Channel(Nil)
     @heartbeat_stop : ::Channel(Nil)
     @last_write_at : Time::Instant
-    @last_write_mutex : Mutex
     @close_reason : Exception?
     @recovery_mutex : Mutex
     @recovery_active : Bool
@@ -91,7 +90,6 @@ module Amqp
       @heartbeat_done = ::Channel(Nil).new
       @heartbeat_stop = ::Channel(Nil).new
       @last_write_at = Time.instant
-      @last_write_mutex = Mutex.new
       @close_reason = nil
       @recovery_mutex = Mutex.new
       @recovery_active = false
@@ -102,11 +100,11 @@ module Amqp
     end
 
     private def stamp_write : Nil
-      @last_write_mutex.synchronize { @last_write_at = Time.instant }
+      @last_write_at = Time.instant
     end
 
     private def idle_since_last_write : Time::Span
-      @last_write_mutex.synchronize { @last_write_at.elapsed }
+      @write_mutex.synchronize { @last_write_at.elapsed }
     end
 
     def self.connect(config : Config) : Connection

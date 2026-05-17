@@ -93,19 +93,21 @@ operations enumerated in `docs/02-public-api.md` §4.
 ### 3.1 Inbox draining
 
 The frame-reader fiber on the host connection routes inbound frames
-to the channel's inbox. The channel itself does NOT own a fiber by
-default; user code reading from `Subscription#receive` or blocking on
-`publish_confirm` drives draining.
+to the channel's inbox. Each opened channel runs a handler fiber that
+drains that inbox, dispatches deliveries, completes RPC continuations,
+and settles publisher confirms.
 
 A channel has at most one "method continuation" outstanding at a
-time. When a fiber blocks on `publish_confirm`, `queue.declare-ok`,
-`basic.get-ok/get-empty`, etc., it owns the inbox until its reply
-arrives. The implementation MUST enforce this via a per-channel
-state lock; concurrent state-changing operations that await a broker
-continuation MUST raise `Amqp::ConcurrencyError`. Fire-and-forget
-`publish` / non-confirm `publish_batch` do not own the inbox and MAY
+time. When a fiber blocks on `queue.declare-ok`,
+`basic.get-ok/get-empty`, `confirm.select-ok`, etc., that operation
+owns the method continuation slot until its reply arrives. The
+implementation MUST enforce this via a per-channel state lock;
+concurrent state-changing operations that await a method continuation
+MUST raise `Amqp::ConcurrencyError`. `publish`, `publish_batch`, and
+`publish_confirm` do not own the method continuation slot; they MAY
 run concurrently if the implementation serialises each publish's
-method/header/body frame sequence under the connection write mutex.
+method/header/body frame sequence under the connection write mutex
+and correlates confirm outcomes by delivery tag.
 
 **Falsifier:** T-CHAN-CONCURRENCY-001 — two fibers call
 `queue_declare` on the same channel simultaneously; the second

@@ -49,9 +49,10 @@ await `confirm.select-ok`. Implementation rules:
 - The first call transitions `Open → Confirms`. The transition is
   irreversible (`docs/07-channel-lifecycle.md` §3.2).
 - The second and subsequent calls are no-ops and return immediately.
-- The call MUST acquire the per-channel state lock so that an
-  interleaved `publish_confirm` (which checks `confirms_enabled?`)
-  sees a consistent state.
+- The call MUST acquire the per-channel state lock so that concurrent
+  confirm-mode transitions see a consistent state. Publishes after
+  `confirm.select-ok` are correlated by delivery tag and do not use
+  the method-continuation slot.
 
 Calling `publish_confirm` or `publish_async` on a non-confirms channel
 MUST raise `Amqp::ConfigurationError` BEFORE writing any bytes to the
@@ -95,6 +96,13 @@ of `nil`.
 Callers who want a batch confirmation barrier call
 `wait_for_confirms` after `publish_batch`. Callers who need individual
 ack/nack/return outcomes use `publish_async` for those messages.
+
+`publish_confirm_batch` packages the common windowed pattern:
+publish at most `window_size` messages with `publish_batch`, call
+`wait_for_confirms`, then advance to the next window. This keeps the
+same tracker semantics as `publish_batch` and `wait_for_confirms`, but
+turns one round trip per message into one confirm barrier per window.
+It returns `false` if any window sees a nack or timeout.
 
 In `Recovery::None`, pending confirm entries retain only routing and
 outcome metadata. In `Recovery::Full`, pending confirm entries also
@@ -169,23 +177,21 @@ ch.publish_confirm(message, exchange, routing_key,
 ### 5.1 Steady-state happy path
 
 1. Verify `confirms_enabled?`; else `Amqp::ConfigurationError`.
-2. Acquire the per-channel state lock (per `docs/07` §3.1).
-3. Under the connection write mutex:
-   a. Register a fresh one-shot `::Channel(ConfirmOutcome)` in the
-      confirm tracker under the next tag.
-   b. Write the three-frame sequence.
-4. Release the connection write mutex; keep the per-channel state
-   lock held (so the inbox isn't consumed by another fiber).
-5. Block on `select { when outcome = chan.receive then ... when
-   timeout(timeout) then ... }`.
-6. On `outcome.kind == Ack`: release the state lock, return `true`.
-7. On `outcome.kind == Nack`: release the state lock, raise
+2. Under the connection write mutex:
+   a. Register a sync waiter in the confirm tracker under the next
+      tag before the publish frames are flushed.
+   b. Write the method/header/body frame sequence without interleaving.
+3. Release the connection write mutex.
+4. Wait on the shared confirm wakeup channel until the handler fiber
+   settles the registered tag or the timeout expires.
+5. On `outcome.kind == Ack`: return `true`.
+6. On `outcome.kind == Nack`: raise
    `Amqp::PublishNackError`.
-8. On `outcome.kind == Returned`: release the state lock, raise
+7. On `outcome.kind == Returned`: raise
    `Amqp::PublishReturnedError` carrying `outcome.return_reason`.
-9. On timeout: release the state lock; KEEP the entry in the
-   confirm tracker (the broker may still ack later — the entry is
-   GC'd by a later range-ack); raise `Amqp::PublishTimeoutError`.
+8. On timeout: abandon only the sync waiter result slot; KEEP the
+   pending confirm entry in the tracker so a later ack/nack/return can
+   still clean up the tag; raise `Amqp::PublishTimeoutError`.
 
 ### 5.2 Channel/connection failures during the wait
 
@@ -340,14 +346,12 @@ Implementations MUST satisfy:
   sorted-map implementation or O(1) for a hash-based one;
   range-ack is O(k) where k is the range size. The shard's choice is
   implementation-defined.
-- **Concurrency.** Multiple fibers MAY call `publish_async` on the
-  same channel sequentially under the state lock; concurrent (same
-  instant) calls MUST be serialised by the state lock or raise
-  `Amqp::ConcurrencyError`. `publish` (no-wait) does NOT raise
-  `ConcurrencyError` for a concurrent `publish` on the same channel
-  IF both publishes can be serialised through the write mutex
-  without observable interleaving. The implementation chooses; the
-  observable contract is "no torn frames."
+- **Concurrency.** `publish_confirm` and non-confirm `publish` do not
+  use the method-continuation slot and MAY run concurrently on the
+  same channel. Their observable contract is "no torn frames" plus
+  one confirm outcome per delivery tag. `publish_async` keeps the
+  conservative state-lock path in v0 because it returns a caller-owned
+  outcome channel.
 
 **Falsifier:** T-PUB-MONO-001 (monotonic), T-PUB-MEM-001 (tracker
 shrinks under load), T-PUB-CONC-001 (no torn frames).

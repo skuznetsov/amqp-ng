@@ -264,6 +264,31 @@ class Amqp::Channel
                     immediate : Bool = false
                    ) : Array(UInt64?)
 
+  # Windowed batch confirmation. Publishes messages in windows of
+  # `window_size`, waits for all confirms after each window, and
+  # returns false on nack/timeout. `confirm_select` MUST have been
+  # called.
+  def publish_confirm_batch(messages : Array(Message),
+                            exchange : String,
+                            routing_key : String,
+                            *,
+                            window_size : Int32 = 100,
+                            mandatory : Bool = false,
+                            immediate : Bool = false,
+                            timeout : Time::Span = 30.seconds
+                           ) : Bool
+
+  def publish_confirm_batch(bodies : Array(Bytes),
+                            exchange : String,
+                            routing_key : String,
+                            *,
+                            properties : Properties = Properties.new,
+                            window_size : Int32 = 100,
+                            mandatory : Bool = false,
+                            immediate : Bool = false,
+                            timeout : Time::Span = 30.seconds
+                           ) : Bool
+
   # amqp-client.cr compatibility aliases. New code should prefer the
   # shorter amqp-ng method names above.
   def basic_publish(body : Bytes | String, exchange : String, routing_key : String = "", ...)
@@ -335,6 +360,12 @@ end
   in that same order when confirm mode is enabled. It does not wait for
   broker outcomes; callers use `wait_for_confirms` for a batch barrier,
   or `publish_async` when they need a per-message outcome channel.
+- `publish_confirm_batch` is the ergonomic windowed-confirm helper:
+  it is equivalent to repeated `publish_batch` plus
+  `wait_for_confirms`, with at most `window_size` newly published
+  messages outstanding between barriers. It returns `false` when a
+  window sees a nack or times out, and raises if confirm mode is not
+  enabled.
 - `immediate: true` is rejected by RabbitMQ and LavinMQ at the broker
   level (returns a `channel.close` with reply-code 540). The shard
   MUST pass the flag through unchanged so callers see the broker

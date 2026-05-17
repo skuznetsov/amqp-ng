@@ -12,8 +12,25 @@ class Amqp::Channel
     end
   end
 
+  def __spec_register_sync_pending_confirm(*,
+                                           mandatory : Bool = false,
+                                           message : Amqp::Message = Amqp::Message.new("spec"),
+                                           exchange : String = "",
+                                           routing_key : String = "spec") : UInt64
+    @confirms_mutex.synchronize do
+      register_sync_pending_confirm_locked(message, exchange, routing_key, mandatory)
+    end
+  end
+
   def __spec_settle_publish(tag : UInt64, *, multiple : Bool, nacked : Bool) : Nil
     __settle_publish_for_test(tag, multiple, nacked)
+  end
+
+  def __spec_await_sync_publish_confirm(tag : UInt64,
+                                        timeout : Time::Span,
+                                        exchange : String = "",
+                                        routing_key : String = "spec") : Bool
+    await_publish_confirm(tag, exchange, routing_key, timeout)
   end
 
   def __spec_await_publish_confirm(tag : UInt64,
@@ -24,6 +41,16 @@ class Amqp::Channel
 
   def __spec_pending_confirm_count : Int32
     @confirms_mutex.synchronize { @pending_confirms.size }
+  end
+
+  def __spec_sync_confirm_waiter_count : Int32
+    @confirms_mutex.synchronize { @pending_confirms.values.count(&.sync_waiter) }
+  end
+
+  def __spec_completed_sync_confirm_count : Int32
+    @confirms_mutex.synchronize do
+      @completed_sync_confirms.size + (@completed_sync_confirm_tag ? 1 : 0)
+    end
   end
 
   def __spec_pending_replay_payload_sizes : Array(Int32?)
@@ -88,6 +115,42 @@ describe "publisher confirms" do
         ], "", info.name)
         seqs.should eq([1_u64, 2_u64, 3_u64])
         ch.wait_for_confirms(5.seconds).should be_true
+        ch.close
+      end
+    end
+
+    it "publish_confirm_batch confirms messages in bounded windows" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+
+        messages = (0...5).map { |i| Amqp::Message.new("window-#{i}") }
+        ch.publish_confirm_batch(messages, "", info.name, window_size: 2, timeout: 5.seconds).should be_true
+        ch.__spec_pending_confirm_count.should eq(0)
+
+        seen = [] of String
+        5.times do
+          msg = ch.get(info.name, auto_ack: true).not_nil!
+          seen << String.new(msg.body)
+        end
+        seen.sort.should eq((0...5).map { |i| "window-#{i}" })
+        ch.close
+      end
+    end
+
+    it "publish_confirm_batch rejects non-positive window sizes" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+
+        expect_raises(ArgumentError, "window_size must be positive") do
+          ch.publish_confirm_batch([Amqp::Message.new("bad-window")], "", info.name, window_size: 0)
+        end
+        ch.__spec_pending_confirm_count.should eq(0)
         ch.close
       end
     end
@@ -444,6 +507,73 @@ describe "publisher confirms" do
         outcome.should_not be_nil
         outcome.not_nil!.kind.ack?.should be_true
         ch.__spec_pending_confirm_count.should eq(0)
+        ch.close
+      end
+    end
+
+    it "settles synchronous publish_confirm waiters without per-publish outcome channels" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        tag = ch.__spec_register_sync_pending_confirm
+
+        ch.__spec_settle_publish(tag, multiple: false, nacked: false)
+
+        ch.__spec_await_sync_publish_confirm(tag, 5.seconds).should be_true
+        ch.__spec_sync_confirm_waiter_count.should eq(0)
+        ch.__spec_completed_sync_confirm_count.should eq(0)
+        ch.__spec_pending_confirm_count.should eq(0)
+        ch.close
+      end
+    end
+
+    it "allows concurrent publish_confirm calls on one channel without tearing frames" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+        done = ::Channel(Exception?).new(8)
+
+        8.times do |i|
+          spawn do
+            begin
+              ch.publish_confirm("confirm-#{i}".to_slice, "", info.name, timeout: 5.seconds).should be_true
+              done.send(nil)
+            rescue ex
+              done.send(ex)
+            end
+          end
+        end
+
+        8.times do
+          if ex = done.receive
+            raise ex
+          end
+        end
+        ch.__spec_pending_confirm_count.should eq(0)
+        ch.close
+      end
+    end
+
+    it "does not retain completed sync confirm results after a timeout abandons the waiter" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        tag = ch.__spec_register_sync_pending_confirm
+
+        expect_raises(Amqp::PublishTimeoutError) do
+          ch.__spec_await_sync_publish_confirm(tag, 1.nanosecond)
+        end
+        ch.__spec_sync_confirm_waiter_count.should eq(0)
+        ch.__spec_pending_confirm_count.should eq(1)
+
+        ch.__spec_settle_publish(tag, multiple: false, nacked: false)
+
+        ch.__spec_pending_confirm_count.should eq(0)
+        ch.__spec_completed_sync_confirm_count.should eq(0)
         ch.close
       end
     end

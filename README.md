@@ -93,6 +93,26 @@ Amqp.connect(ENV["AMQP_URL"]? || "amqp://guest:guest@localhost:5672") do |conn|
 end
 ```
 
+For higher-throughput producer paths, publish confirmed messages in
+bounded windows instead of waiting for one broker round trip per
+message:
+
+```crystal
+messages = jobs.map do |job|
+  Amqp::Message.new(job.to_json, props)
+end
+
+ok = ch.publish_confirm_batch(
+  messages,
+  "",
+  "jobs.analyze",
+  window_size: 100,
+  timeout: 10.seconds,
+)
+
+raise "confirm window failed" unless ok
+```
+
 ### Worker Consumer
 
 ```crystal
@@ -130,7 +150,7 @@ end
 | --- | --- |
 | Connection lifecycle | `connect`, block form, close, server properties, `blocked?`, blocked/unblocked callbacks |
 | Channel lifecycle | open/close, broker close mapping, `channel.flow`, close callbacks |
-| Publishing | fire-and-forget, batch publish, sync confirms, async confirms, mandatory returns |
+| Publishing | fire-and-forget, batch publish, sync confirms, windowed confirms, async confirms, mandatory returns |
 | Consuming | `get`, `consume`, `subscribe`, `basic_consume(work_pool:)`, `ack`, `nack`, `reject`, `qos` |
 | Topology | queue/exchange declare, bind, unbind, purge, delete, wrapper objects |
 | Transactions | `tx_select`, `tx_commit`, `tx_rollback`, `transaction` helper |
@@ -163,7 +183,7 @@ crystal spec --error-trace
 yet a CI performance contract; `docs/14-performance-contract.md` remains
 a roadmap until `spec/perf/` exists.
 
-Latest paired local release-compiler run:
+Broad paired local release-compiler run:
 
 - Crystal: `/opt/homebrew/bin/crystal 1.20.1 --release`
 - Broker: local RabbitMQ 3.13.x
@@ -178,6 +198,27 @@ Latest paired local release-compiler run:
 | 2 connections, separate queues | ~705k msg/s | ~682k msg/s | queue-sharded producers |
 | 4 connections, separate queues | ~625k msg/s | ~621k msg/s | queue-sharded producers |
 | sync confirm per publish | ~2.48k msg/s | ~2.52k msg/s | one round trip per publish |
+
+Latest paired local release-compiler runs after the confirm batching and
+heartbeat-stamp hot-path cleanup:
+
+- Crystal: `/opt/homebrew/bin/crystal 1.20.1 --release`
+- Brokers: local RabbitMQ 3.13.x and LavinMQ 2.4.0
+- Body: 256 bytes
+- Shape: `AMQP_BENCH_PUBLISH_N=15000`, `AMQP_BENCH_CONFIRM_N=1500`,
+  `AMQP_BENCH_SAMPLES=5`, channels/connections `1,2,4`
+
+| Broker | Workload | amqp-ng | amqp-client.cr | Delta |
+| --- | --- | ---: | ---: | ---: |
+| RabbitMQ | single fire-and-forget publish | ~82.3k msg/s | ~72.6k msg/s | +13.5% |
+| RabbitMQ | same-connection 4-channel publish | ~77.0k msg/s | ~67.1k msg/s | +14.8% |
+| RabbitMQ | sync confirm per publish | ~2.68k msg/s | ~2.52k msg/s | +6.4% |
+| RabbitMQ | windowed confirm, size 500 | ~65.0k msg/s | n/a | n/a |
+| LavinMQ | single fire-and-forget publish | ~744.6k msg/s | ~771.5k msg/s | -3.5% |
+| LavinMQ | same-connection 2-channel publish | ~822.4k msg/s | ~722.8k msg/s | +13.8% |
+| LavinMQ | 4 connections, separate queues | ~694.0k msg/s | ~678.7k msg/s | +2.2% |
+| LavinMQ | sync confirm per publish | ~3.46k msg/s | ~3.37k msg/s | +2.7% |
+| LavinMQ | batch confirm + wait | ~33.6k msg/s | n/a | n/a |
 
 Run the local harness:
 
@@ -194,6 +235,45 @@ crystal run tools/perf_publish.cr --release --error-trace
 The largest measured throughput lane is multi-connection publishing to
 separate queues. Single-connection multi-channel publishing is bounded by
 the intentional connection write mutex.
+
+The harness also emits `publish_batch_bytes` for the public
+`publish_batch(Array(Bytes))` overload. That lane is measured separately
+from `publish_batch`, which uses prebuilt `Amqp::Message` values.
+It also emits synthetic stage-attribution lanes such as
+`encode_empty_publish_frames`, `parse_basic_ack_frame_generic`, and
+`parse_basic_ack_frame_direct`; set `AMQP_BENCH_STAGE_N` to control
+the number of synthetic stage iterations. These stage lanes are
+diagnostic triggers, not live throughput claims.
+Set `AMQP_BENCH_CONFIRM_WINDOWS` to sweep confirm-window sizes; the
+tool emits `confirm_window_<n>` lanes that publish `n` messages, wait
+for confirms, and repeat. These lanes show the transport benefit of a
+ladder/windowed confirm style without changing application code.
+
+Latest cross-broker release-compiler smoke after the bytes-batch fast path:
+
+- Crystal: `/opt/homebrew/bin/crystal 1.20.1 --release`
+- Brokers: `rabbitmq:3.13-management` on `5672`, `cloudamqp/lavinmq:2.4.0` on `5673`
+- Full shape: `AMQP_BENCH_PUBLISH_N=30000`,
+  `AMQP_BENCH_CONFIRM_N=3000`, `AMQP_BENCH_SAMPLES=3`,
+  batch size `100`, channels/connections `1,2,4`
+- Batch-focused shape: same counts with `AMQP_BENCH_SAMPLES=7`,
+  channels/connections `1`
+
+| Workload | RabbitMQ | LavinMQ | Notes |
+| --- | ---: | ---: | --- |
+| single fire-and-forget publish | ~79.3k msg/s | ~754.0k msg/s | batch-focused run |
+| prebuilt-message batch | ~87.5k msg/s | ~736.9k msg/s | `Array(Amqp::Message)`, batch-focused run |
+| bytes batch | ~85.4k msg/s | ~845.2k msg/s | public `Array(Bytes)` overload, batch-focused run |
+| 4 connections, separate queues | ~795.5k msg/s | ~777.2k msg/s | queue-sharded producers, full run |
+| sync confirm per publish | ~2.96k msg/s | ~4.29k msg/s | one round trip per publish, batch-focused run |
+| batch confirm + wait | ~74.1k msg/s | ~53.7k msg/s | batch size 100, batch-focused run |
+
+The bytes-batch fast path is a lower-allocation public API path, not a
+proved live-throughput win over callers that already prebuild
+`Amqp::Message` batches. On these local runs, socket/broker behavior
+dominates the publish lanes. Batch publish also reuses a prebuilt
+`basic.publish` method frame for every message in a batch, guarded by a
+wire-level byte-equivalence spec.
 
 ## Verification
 

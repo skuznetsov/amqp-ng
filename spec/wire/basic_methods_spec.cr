@@ -45,5 +45,12 @@ describe Amqp::Wire::AmqpZeroNineOne::BasicMethods do
       end
       io.to_slice.should be_empty
     end
+
+    it "builds a reusable publish method frame equivalent to direct writing" do
+      expected = IO::Memory.new
+      BM.write_publish_frame(expected, 3_u16, "", "jobs", mandatory: false)
+
+      BM.publish_frame(3_u16, "", "jobs", mandatory: false).should eq(expected.to_slice)
+    end
   end
 end

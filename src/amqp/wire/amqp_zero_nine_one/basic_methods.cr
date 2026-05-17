@@ -182,6 +182,16 @@ module Amqp::Wire::AmqpZeroNineOne
       io.write_byte(Amqp::Wire::FRAME_END)
     end
 
+    def publish_frame(channel : UInt16,
+                      exchange : String,
+                      routing_key : String,
+                      mandatory : Bool,
+                      immediate : Bool = false) : Bytes
+      io = IO::Memory.new
+      write_publish_frame(io, channel, exchange, routing_key, mandatory, immediate)
+      io.to_slice
+    end
+
     struct Return
       getter reply_code : UInt16
       getter reply_text : String

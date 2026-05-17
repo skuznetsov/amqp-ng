@@ -94,6 +94,8 @@ describe "documented public API surface" do
     typeof(ch.publish(Amqp::Message.new("x"), "", "rk")).should eq(UInt64?)
     typeof(ch.publish_batch([Amqp::Message.new("x")], "", "rk")).should eq(Array(UInt64?))
     typeof(ch.publish_batch(["x".to_slice], "", "rk")).should eq(Array(UInt64?))
+    typeof(ch.publish_confirm_batch([Amqp::Message.new("x")], "", "rk")).should eq(Bool)
+    typeof(ch.publish_confirm_batch(["x".to_slice], "", "rk")).should eq(Bool)
     typeof(ch.publish_confirm(Amqp::Message.new("x"), "", "rk")).should eq(Bool)
     typeof(ch.publish_async(Amqp::Message.new("x"), "", "rk")).should eq(Tuple(UInt64, ::Channel(Amqp::ConfirmOutcome)))
     typeof(ch.subscribe("q")).should eq(Amqp::Subscription)

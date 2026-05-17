@@ -11,6 +11,7 @@ confirm_n = (ENV["AMQP_BENCH_CONFIRM_N"]? || "3000").to_i
 batch_size = (ENV["AMQP_BENCH_BATCH_SIZE"]? || "100").to_i
 samples = (ENV["AMQP_BENCH_SAMPLES"]? || "5").to_i
 body_bytes = (ENV["AMQP_BENCH_BODY_BYTES"]? || "256").to_i
+stage_n = (ENV["AMQP_BENCH_STAGE_N"]? || {publish_n, 200_000}.max.to_s).to_i
 channel_counts = (ENV["AMQP_BENCH_CHANNELS"]? || "1,2,4,8")
   .split(',')
   .map(&.strip)
@@ -25,16 +26,26 @@ connection_counts = (ENV["AMQP_BENCH_CONNECTIONS"]? || "1,2,4")
   .map(&.to_i)
   .uniq
   .sort
+confirm_windows = (ENV["AMQP_BENCH_CONFIRM_WINDOWS"]? || "1,10,50,100,500")
+  .split(',')
+  .map(&.strip)
+  .reject(&.empty?)
+  .map(&.to_i)
+  .uniq
+  .sort
 
 raise "AMQP_BENCH_PUBLISH_N must be positive" unless publish_n > 0
 raise "AMQP_BENCH_CONFIRM_N must be positive" unless confirm_n > 0
 raise "AMQP_BENCH_BATCH_SIZE must be positive" unless batch_size > 0
 raise "AMQP_BENCH_SAMPLES must be positive" unless samples > 0
 raise "AMQP_BENCH_BODY_BYTES must be non-negative" unless body_bytes >= 0
+raise "AMQP_BENCH_STAGE_N must be positive" unless stage_n > 0
 raise "AMQP_BENCH_CHANNELS must contain at least one positive integer" unless channel_counts.any? { |n| n > 0 }
 raise "AMQP_BENCH_CHANNELS must contain only positive integers" unless channel_counts.all? { |n| n > 0 }
 raise "AMQP_BENCH_CONNECTIONS must contain at least one positive integer" unless connection_counts.any? { |n| n > 0 }
 raise "AMQP_BENCH_CONNECTIONS must contain only positive integers" unless connection_counts.all? { |n| n > 0 }
+raise "AMQP_BENCH_CONFIRM_WINDOWS must contain at least one positive integer" unless confirm_windows.any? { |n| n > 0 }
+raise "AMQP_BENCH_CONFIRM_WINDOWS must contain only positive integers" unless confirm_windows.all? { |n| n > 0 }
 
 def median(values : Array(Float64)) : Float64
   sorted = values.sort
@@ -63,6 +74,8 @@ def sample_rates(samples : Int32, count : Int32, & : ->) : Array(Float64)
     started = Time.instant
     yield
     elapsed = Time.instant - started
+    raise "benchmark sample elapsed time was zero; increase workload count" unless elapsed.total_nanoseconds > 0
+
     rates << (count.to_f64 / elapsed.total_seconds)
   end
   rates
@@ -104,10 +117,60 @@ def write_empty_property_publish(io : IO, channel : UInt16, exchange : String, r
   end
 end
 
+def parse_basic_ack_frame_generic(frame_bytes : Bytes, frame_max : UInt32) : {UInt64, Bool}
+  io = IO::Memory.new(frame_bytes, false)
+  frame = Amqp::Wire::Frame.read(io, frame_max)
+  body = IO::Memory.new(frame.payload, false)
+  class_id = body.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
+  method_id = body.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
+  unless class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC &&
+         method_id == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_ACK
+    raise "expected basic.ack"
+  end
+  ack = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.read(body)
+  {ack.delivery_tag, ack.multiple}
+end
+
+def read_u16_be(bytes : Bytes, offset : Int32) : UInt16
+  ((bytes[offset].to_u16 << 8) | bytes[offset + 1].to_u16).to_u16
+end
+
+def read_u32_be(bytes : Bytes, offset : Int32) : UInt32
+  ((bytes[offset].to_u32 << 24) |
+    (bytes[offset + 1].to_u32 << 16) |
+    (bytes[offset + 2].to_u32 << 8) |
+    bytes[offset + 3].to_u32).to_u32
+end
+
+def read_u64_be(bytes : Bytes, offset : Int32) : UInt64
+  value = 0_u64
+  8.times do |i|
+    value = (value << 8) | bytes[offset + i].to_u64
+  end
+  value
+end
+
+def parse_basic_ack_frame_direct(frame_bytes : Bytes, frame_max : UInt32) : {UInt64, Bool}
+  raise "short frame" if frame_bytes.size < 21
+  raise "expected method frame" unless frame_bytes[0] == Amqp::Wire::FrameType::Method.value
+
+  length = read_u32_be(frame_bytes, 3)
+  cap = frame_max == 0 ? 131_072_u32 : frame_max
+  raise "frame too large" if length > cap - 8
+  raise "unexpected basic.ack length #{length}" unless length == 13
+  raise "bad frame end" unless frame_bytes[20] == Amqp::Wire::FRAME_END
+  raise "expected basic class" unless read_u16_be(frame_bytes, 7) == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
+  raise "expected basic.ack" unless read_u16_be(frame_bytes, 9) == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_ACK
+
+  {read_u64_be(frame_bytes, 11), (frame_bytes[19] & 0x01) != 0}
+end
+
 body = Bytes.new(body_bytes, 120_u8)
 single_message = Amqp::Message.new(body)
 full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
 tail_messages = Array.new(publish_n % batch_size) { Amqp::Message.new(body) }
+full_batch_bodies = Array.new(batch_size) { body }
+tail_bodies = Array.new(publish_n % batch_size) { body }
 
 results = {} of String => Array(Float64)
 stages = {} of String => Array(Float64)
@@ -117,6 +180,29 @@ stages["encode_empty_publish_frames"] = sample_rates(samples, publish_n) do
   publish_n.times do
     io = IO::Memory.new
     write_empty_property_publish(io, 1_u16, "", "bench", body)
+  end
+end
+
+ack_payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.new(42_u64, false).to_payload
+ack_frame_io = IO::Memory.new
+Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, ack_payload).write(ack_frame_io)
+ack_frame = ack_frame_io.to_slice
+{parse_basic_ack_frame_generic(ack_frame, 131_072_u32),
+ parse_basic_ack_frame_direct(ack_frame, 131_072_u32)}.each do |tag, multiple|
+  raise "bad ack parse" unless tag == 42_u64 && !multiple
+end
+
+stages["parse_basic_ack_frame_generic"] = sample_rates(samples, stage_n) do
+  stage_n.times do
+    tag, multiple = parse_basic_ack_frame_generic(ack_frame, 131_072_u32)
+    raise "bad ack parse" unless tag == 42_u64 && !multiple
+  end
+end
+
+stages["parse_basic_ack_frame_direct"] = sample_rates(samples, stage_n) do
+  stage_n.times do
+    tag, multiple = parse_basic_ack_frame_direct(ack_frame, 131_072_u32)
+    raise "bad ack parse" unless tag == 42_u64 && !multiple
   end
 end
 
@@ -141,6 +227,16 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       remaining -= batch_size
     end
     ch.publish_batch(tail_messages, "", queue) unless tail_messages.empty?
+    ch.queue_purge(queue)
+  end
+
+  results["publish_batch_bytes"] = sample_rates(samples, publish_n) do
+    remaining = publish_n
+    while remaining >= batch_size
+      ch.publish_batch(full_batch_bodies, "", queue)
+      remaining -= batch_size
+    end
+    ch.publish_batch(tail_bodies, "", queue) unless tail_bodies.empty?
     ch.queue_purge(queue)
   end
 
@@ -215,6 +311,22 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     confirm_ch.queue_purge(confirm_queue)
   end
 
+  confirm_windows.each do |window_size|
+    window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
+
+    results["confirm_window_#{window_size}"] = sample_rates(samples, confirm_n) do
+      ok = confirm_ch.publish_confirm_batch(
+        window_messages,
+        "",
+        confirm_queue,
+        window_size: window_size,
+        timeout: 30.seconds,
+      )
+      raise "publish_confirm_batch timed out or saw nack" unless ok
+      confirm_ch.queue_purge(confirm_queue)
+    end
+  end
+
   confirm_ch.queue_delete(confirm_queue) rescue nil
   ch.queue_delete(queue) rescue nil
 end
@@ -229,8 +341,10 @@ JSON.build(STDOUT) do |json|
     json.field "batch_size", batch_size
     json.field "samples", samples
     json.field "body_bytes", body_bytes
+    json.field "stage_n", stage_n
     json.field "channel_counts", channel_counts
     json.field "connection_counts", connection_counts
+    json.field "confirm_windows", confirm_windows
     json.field "stages" do
       json.object do
         stages.keys.sort.each do |name|
