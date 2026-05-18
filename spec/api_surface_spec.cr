@@ -35,6 +35,7 @@ describe "documented public API surface" do
       "Message",
       "Persistence",
       "PreconditionFailedError",
+      "PreparedPublisher",
       "Properties",
       "ProtocolError",
       "ProtocolNegotiationError",
@@ -97,6 +98,7 @@ describe "documented public API surface" do
     typeof(ch.publish_batch(["x".to_slice], "", "rk")).should eq(Array(UInt64?))
     typeof(ch.publish_confirm_batch([Amqp::Message.new("x")], "", "rk")).should eq(Bool)
     typeof(ch.publish_confirm_batch(["x".to_slice], "", "rk")).should eq(Bool)
+    typeof(ch.prepared_publisher("", "rk")).should eq(Amqp::PreparedPublisher)
     typeof(ch.publish_confirm(Amqp::Message.new("x"), "", "rk")).should eq(Bool)
     typeof(ch.publish_async(Amqp::Message.new("x"), "", "rk")).should eq(Tuple(UInt64, ::Channel(Amqp::ConfirmOutcome)))
     typeof(ch.subscribe("q")).should eq(Amqp::Subscription)
@@ -162,6 +164,19 @@ describe "documented public API surface" do
     typeof(exchange.publish("x", "rk")).should eq(UInt64)
     typeof(exchange.publish_confirm("x", "rk")).should eq(Bool)
     typeof(exchange.delete).should eq(Nil)
+  end
+
+  it "type-checks prepared publishers" do
+    publisher = uninitialized Amqp::PreparedPublisher
+    typeof(publisher.channel).should eq(Amqp::Channel)
+    typeof(publisher.exchange).should eq(String)
+    typeof(publisher.routing_key).should eq(String)
+    typeof(publisher.properties).should eq(Amqp::Properties)
+    typeof(publisher.mandatory).should eq(Bool)
+    typeof(publisher.immediate).should eq(Bool)
+    typeof(publisher.publish("x")).should eq(UInt64?)
+    typeof(publisher.publish("x".to_slice)).should eq(UInt64?)
+    typeof(publisher.publish_batch(["x".to_slice])).should eq(Array(UInt64?))
   end
 
   it "type-checks returned messages" do

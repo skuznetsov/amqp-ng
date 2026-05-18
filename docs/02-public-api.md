@@ -289,6 +289,18 @@ class Amqp::Channel
                             timeout : Time::Span = 30.seconds
                            ) : Bool
 
+  # Prepared fixed-route fire-and-forget publisher. In non-confirm
+  # mode this precomputes the basic.publish method frame for repeated
+  # publishes to one exchange/routing-key/properties corridor. Confirm
+  # mode falls back to the normal confirm publish paths.
+  def prepared_publisher(exchange : String,
+                         routing_key : String,
+                         *,
+                         properties : Properties = Properties.new,
+                         mandatory : Bool = false,
+                         immediate : Bool = false
+                        ) : PreparedPublisher
+
   # amqp-client.cr compatibility aliases. New code should prefer the
   # shorter amqp-ng method names above.
   def basic_publish(body : Bytes | String, exchange : String, routing_key : String = "", ...)
@@ -366,6 +378,10 @@ end
   messages outstanding between barriers. It returns `false` when a
   window sees a nack or times out, and raises if confirm mode is not
   enabled.
+- `prepared_publisher` is for fixed-route fire-and-forget workloads.
+  It avoids repeated route method-frame selection on non-confirm
+  channels. On confirm-enabled channels it preserves existing confirm
+  and recovery behavior by routing through the ordinary confirm paths.
 - `immediate: true` is rejected by RabbitMQ and LavinMQ at the broker
   level (returns a `channel.close` with reply-code 540). The shard
   MUST pass the flag through unchanged so callers see the broker

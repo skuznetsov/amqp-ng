@@ -117,6 +117,32 @@ describe Amqp::Channel do
       end
     end
 
+    it "publishes through a prepared fixed-route publisher" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        publisher = ch.prepared_publisher("", info.name,
+          properties: Amqp::Properties.new(content_type: "text/plain"))
+
+        publisher.publish("prepared-0")
+        publisher.publish_batch([
+          "prepared-1".to_slice,
+          "prepared-2".to_slice,
+        ]).should eq([nil, nil])
+
+        3.times do |i|
+          msg = ch.get(info.name, auto_ack: true)
+          msg.should_not be_nil
+          msg = msg.not_nil!
+          String.new(msg.body).should eq("prepared-#{i}")
+          msg.properties.content_type.should eq("text/plain")
+        end
+        ch.get(info.name).should be_nil
+        ch.close
+      end
+    end
+
     it "serializes concurrent fire-and-forget publishes on one channel" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

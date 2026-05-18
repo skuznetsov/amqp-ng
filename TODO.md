@@ -297,6 +297,20 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_bytes_20260518.json` reports `confirm_sync_bytes` median ~5.02k msg/s vs prebuilt-message `confirm_sync` ~4.94k. Treat this as small directional signal because sync confirms remain broker RTT dominated.
+- [x] Save the high-level LTP/WBA performance audit.
+  - Finding: local codec/frame micro-corridors are mostly harvested; stronger remaining moves sit at API/transport/scheduler level.
+  - Ranked next corridors: prepared fixed-route publisher, striped publisher pool, consumer fast lane, stats batching/opt-out, and explicit write coalescing.
+  - Decision: start with prepared publisher because it removes a repeated fixed-route corridor without changing default ordering, recovery, or scheduler semantics.
+  - Evidence: code audit of `Connection#with_write`, reader dispatch, channel publish paths, subscription mailbox, and latest `.tmp/bench/current_ng_lavinmq_confirm_bytes_20260518.json`.
+- [x] Apply the sixteenth higher-level LTP/WBA prepared-publisher corridor move.
+  - Frame: `Window` = repeated fixed-route fire-and-forget publishes; `Transport` = prepared route/properties -> publish method/header/body frames; `Potential` = `(route_method_frame_selection, write_lock_work, recovery_semantics, live_publish_latency)`.
+  - Progress: added `Amqp::PreparedPublisher` and `Channel#prepared_publisher` for repeated fixed-route publishing. Non-confirm prepared publishes use a precomputed `basic.publish` method frame; confirm-mode channels fall back to the normal confirm publish paths so replay semantics remain unchanged.
+  - Progress: `tools/perf_publish.cr` now reports `publish_prepared_bytes` and `publish_prepared_batch_bytes`.
+  - Evidence: focused `/opt/homebrew/bin/crystal spec spec/api_surface_spec.cr spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 33 examples, 0 failures, 0 errors, 22 pending.
+  - Evidence: full default `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 196 examples, 0 failures, 0 errors, 82 pending.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/docs_falsifier_link_spec.cr --error-trace`, `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr spec/stats_spec.cr --error-trace` exits 0: 33 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_prepared_publisher_20260518.json` reports `publish_prepared_batch_bytes` median ~764.6k msg/s vs `publish_batch_bytes` ~739.7k, but `publish_prepared_bytes` ~746.0k trails `publish_single_bytes` ~819.8k on this noisy run. Treat this as a validated/measurable prepared corridor with a batch-directional signal, not as a universal single-publish win.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

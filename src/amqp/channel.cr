@@ -589,6 +589,23 @@ module Amqp
       true
     end
 
+    def prepared_publisher(exchange : String,
+                           routing_key : String,
+                           *,
+                           properties : Properties = Properties.new,
+                           mandatory : Bool = false,
+                           immediate : Bool = false) : PreparedPublisher
+      PreparedPublisher.new(
+        self,
+        exchange,
+        routing_key,
+        properties,
+        mandatory,
+        immediate,
+        publish_method_frame(exchange, routing_key, mandatory, immediate),
+      )
+    end
+
     def publish_confirm(message : Message,
                         exchange : String,
                         routing_key : String,
@@ -1338,6 +1355,75 @@ module Amqp
       nil
     end
 
+    # :nodoc:
+    def __publish_prepared(prepared : PreparedPublisher, body : Bytes) : UInt64?
+      ensure_open!
+      wait_for_flow_active
+      if @confirms_enabled
+        return publish(Message.new(body, prepared.properties),
+          prepared.exchange, prepared.routing_key,
+          mandatory: prepared.mandatory, immediate: prepared.immediate)
+      end
+
+      publish_prepared_unconfirmed(prepared, body)
+    end
+
+    # :nodoc:
+    def __publish_prepared_batch(prepared : PreparedPublisher, bodies : Array(Bytes)) : Array(UInt64?)
+      ensure_open!
+      wait_for_flow_active
+      if @confirms_enabled
+        return publish_batch(bodies, prepared.exchange, prepared.routing_key,
+          properties: prepared.properties,
+          mandatory: prepared.mandatory,
+          immediate: prepared.immediate)
+      end
+
+      publish_prepared_batch_unconfirmed(prepared, bodies)
+    end
+
+    private def publish_prepared_unconfirmed(prepared : PreparedPublisher,
+                                             body : Bytes) : UInt64?
+      header_payload = unless prepared.properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          body.size.to_u64,
+          prepared.properties,
+        )
+      end
+      write_publish_frames(prepared.method_frame, header_payload, body,
+        max_body_per_frame(@connection.frame_max)) { }
+      @connection.stats.incr_published
+      nil
+    end
+
+    private def publish_prepared_batch_unconfirmed(prepared : PreparedPublisher,
+                                                   bodies : Array(Bytes)) : Array(UInt64?)
+      seqs = Array(UInt64?).new(bodies.size) { nil }
+      return seqs if bodies.empty?
+
+      max_body = max_body_per_frame(@connection.frame_max)
+      @connection.with_write do |io|
+        if prepared.properties.empty?
+          bodies.each do |body|
+            write_publish_frames_to(io, prepared.method_frame, nil, body, max_body)
+          end
+        else
+          bodies.each do |body|
+            header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+              Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+              body.size.to_u64,
+              prepared.properties,
+            )
+            write_publish_frames_to(io, prepared.method_frame,
+              header_payload, body, max_body)
+          end
+        end
+      end
+      @connection.stats.incr_published(bodies.size.to_i64)
+      seqs
+    end
+
     private def publish_registered(message : Message,
                                    exchange : String,
                                    routing_key : String,
@@ -2046,6 +2132,17 @@ module Amqp
         before_write.call
         write_publish_frames_to(io, exchange, routing_key, mandatory, immediate,
           header_payload, body, max_body)
+      end
+    end
+
+    private def write_publish_frames(method_frame : Bytes,
+                                     header_payload : Bytes?,
+                                     body : Bytes,
+                                     max_body : Int32,
+                                     &before_write : ->) : Nil
+      @connection.with_write do |io|
+        before_write.call
+        write_publish_frames_to(io, method_frame, header_payload, body, max_body)
       end
     end
 

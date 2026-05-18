@@ -6,6 +6,7 @@ require "./amqp/get_message"
 require "./amqp/connection"
 require "./amqp/queue"
 require "./amqp/exchange"
+require "./amqp/prepared_publisher"
 
 module Amqp
   VERSION = "0.1.0"
