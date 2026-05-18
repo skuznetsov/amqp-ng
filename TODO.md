@@ -225,6 +225,11 @@ Status: active working ledger for `amqp-ng`.
   - Progress: repeated empty content-header frames now use a delayed one-entry cache. The first new body size is still written directly, so unique-size workloads do not allocate a cached header frame; repeated same-size publishes use the reusable header frame.
   - Evidence: `ContentHeader.empty_frame` is byte-equivalent to `write_empty_frame`; focused wire/channel/confirm specs, release no-codegen perf build, format check, and diff check pass.
   - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_header_cache_20260518.json` reports `publish_single` ~831.0k msg/s and `publish_batch_bytes` ~910.5k; treat this as directional because broker/runtime noise is high.
+- [x] Apply the seventh higher-level LTP/WBA batch-stats corridor move.
+  - Frame: `Window` = per-message `Stats#incr_published` calls inside confirm batch write-lock sections; `Transport` = confirm batch registration -> frame write -> post-write stats; `Potential` = `(write_lock_work, atomic_counter_ops_under_lock, stats_correctness, live_batch_latency)`.
+  - Progress: confirm batch and confirm-window paths now increment published stats once per successful batch/window after the write lock is released, instead of once per message under `connection.with_write`.
+  - Evidence: live LavinMQ 2.4.0 `crystal spec spec/stats_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_stats_batch_20260518.json` shows batch/window lanes remained healthy but did not prove a clean end-to-end throughput win; treat this as write-lock work reduction rather than a throughput claim.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

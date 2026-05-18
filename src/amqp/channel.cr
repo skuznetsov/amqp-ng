@@ -1664,7 +1664,6 @@ module Amqp
 
             write_publish_frames_to(io, method_frame,
               header_payload, message.body, max_body)
-            @connection.stats.incr_published
           end
         end
       rescue ex
@@ -1681,6 +1680,7 @@ module Amqp
       ensure
         @confirms_mutex.unlock if lock_during_write
       end
+      @connection.stats.incr_published(messages.size.to_i64)
       seqs
     end
 
@@ -1717,7 +1717,6 @@ module Amqp
           if properties.empty?
             bodies.each do |body|
               write_publish_frames_to(io, method_frame, nil, body, max_body)
-              @connection.stats.incr_published
             end
           else
             bodies.each do |body|
@@ -1729,7 +1728,6 @@ module Amqp
 
               write_publish_frames_to(io, method_frame,
                 header_payload, body, max_body)
-              @connection.stats.incr_published
             end
           end
         end
@@ -1747,6 +1745,7 @@ module Amqp
       ensure
         @confirms_mutex.unlock if lock_during_write
       end
+      @connection.stats.incr_published(bodies.size.to_i64)
       seqs
     end
 
@@ -1799,7 +1798,6 @@ module Amqp
 
             write_publish_frames_to(io, method_frame,
               header_payload, message.body, max_body)
-            @connection.stats.incr_published
             index += 1
           end
         end
@@ -1815,6 +1813,7 @@ module Amqp
       ensure
         @confirms_mutex.unlock if lock_during_write
       end
+      @connection.stats.incr_published(count.to_i64)
     end
 
     private def publish_batch_registered_range(bodies : Array(Bytes),
@@ -1861,7 +1860,6 @@ module Amqp
             while index < stop
               body = bodies[index]
               write_publish_frames_to(io, method_frame, nil, body, max_body)
-              @connection.stats.incr_published
               index += 1
             end
           else
@@ -1876,7 +1874,6 @@ module Amqp
 
               write_publish_frames_to(io, method_frame,
                 header_payload, body, max_body)
-              @connection.stats.incr_published
               index += 1
             end
           end
@@ -1893,6 +1890,7 @@ module Amqp
       ensure
         @confirms_mutex.unlock if lock_during_write
       end
+      @connection.stats.incr_published(count.to_i64)
     end
 
     private def publish_method_frame(exchange : String,
