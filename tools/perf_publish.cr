@@ -476,6 +476,13 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     confirm_ch.queue_purge(confirm_queue)
   end
 
+  results["confirm_sync_bytes"] = sample_rates("confirm_sync_bytes", samples, confirm_n) do
+    confirm_n.times do
+      confirm_ch.publish_confirm(body, "", confirm_queue, timeout: 5.seconds)
+    end
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
   confirm_full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
   confirm_tail_messages = Array.new(confirm_n % batch_size) { Amqp::Message.new(body) }
 

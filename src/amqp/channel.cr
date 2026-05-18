@@ -663,8 +663,11 @@ module Amqp
                         properties : Properties = Properties.new,
                         mandatory : Bool = false,
                         timeout : Time::Span = 30.seconds) : Bool
-      publish_confirm(Message.new(body, properties), exchange, routing_key,
-        mandatory: mandatory, timeout: timeout)
+      raise ConfigurationError.new("publish_confirm requires confirm mode") unless @confirms_enabled
+      raise PublishTimeoutError.new(0_u64, timeout) if timeout <= Time::Span.zero
+      wait_for_flow_active
+      tag = publish_registered_sync(body, properties, exchange, routing_key, mandatory, false)
+      await_publish_confirm(tag.not_nil!, exchange, routing_key, timeout)
     end
 
     def publish_async(message : Message,
@@ -1434,6 +1437,57 @@ module Amqp
       seq
     end
 
+    private def publish_registered_sync(body : Bytes,
+                                        properties : Properties,
+                                        exchange : String,
+                                        routing_key : String,
+                                        mandatory : Bool,
+                                        immediate : Bool) : UInt64?
+      header_payload = unless properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          body.size.to_u64,
+          properties,
+        )
+      end
+      frame_max = @connection.frame_max
+      max_body = max_body_per_frame(frame_max)
+      seq = nil
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      @confirms_mutex.lock if lock_during_write
+      begin
+        if lock_during_write
+          replay_message = Message.new(body, properties)
+          seq = register_sync_pending_confirm_replay_locked(replay_message,
+            exchange, routing_key, mandatory)
+        else
+          write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+            body, max_body) do
+            seq = @confirms_mutex.synchronize do
+              register_sync_pending_confirm_replay_locked(nil, exchange, routing_key, mandatory)
+            end
+          end
+          @connection.stats.incr_published
+          return seq
+        end
+        write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+          body, max_body) { }
+      rescue ex
+        if tag = seq
+          if lock_during_write
+            discard_pending_confirm_locked(tag)
+          else
+            @confirms_mutex.synchronize { discard_pending_confirm_locked(tag) }
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      @connection.stats.incr_published
+      seq
+    end
+
     private def publish_registered_callback(message : Message,
                                             exchange : String,
                                             routing_key : String,
@@ -1529,11 +1583,18 @@ module Amqp
                                                      exchange : String,
                                                      routing_key : String,
                                                      mandatory : Bool) : UInt64
+      replay_message = @connection.recovery_mode.full? ? message : nil
+      register_sync_pending_confirm_replay_locked(replay_message, exchange, routing_key, mandatory)
+    end
+
+    private def register_sync_pending_confirm_replay_locked(replay_message : Message?,
+                                                            exchange : String,
+                                                            routing_key : String,
+                                                            mandatory : Bool) : UInt64
       seq = @next_publish_seq
       @next_publish_seq += 1
       @unconfirmed << seq
       @lowest_unconfirmed ||= seq
-      replay_message = @connection.recovery_mode.full? ? message : nil
       @pending_confirms[seq] = PendingConfirm.new(
         seq, mandatory, nil, nil, replay_message, exchange, routing_key, true,
       )
