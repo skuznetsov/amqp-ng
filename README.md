@@ -42,7 +42,7 @@ For a Git dependency after pushing this branch:
 dependencies:
   amqp:
     github: skuznetsov/amqp-ng
-    branch: codex/v0.1.0-release-parity
+    branch: main
 ```
 
 Then:
