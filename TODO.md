@@ -237,6 +237,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full default `crystal spec --error-trace` exits 0: 187 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 56 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_body_prefix_20260518.json` reports `publish_single` ~715.2k msg/s and `publish_batch_bytes` ~852.7k; treat this as directional only, not a clean end-to-end win.
+- [x] Apply the ninth higher-level LTP/WBA empty-header decode move.
+  - Frame: `Window` = incoming empty content-header payloads for default-property deliveries; `Transport` = broker header frame -> channel handler -> delivery/get/return emission; `Potential` = `(handler_decode_work, transient_io_objects, consumed_delivery_latency, live_consume_cpu)`.
+  - Progress: `ContentHeader.decode_empty` now parses exact 14-byte empty-property header payloads directly and falls back to the generic decoder for non-empty or malformed payloads. The benchmark harness now labels zero-duration lanes and uses varied header payloads for direct-decode stage attribution so release optimization cannot erase the loop.
+  - Evidence: `crystal spec spec/wire/content_header_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 62 examples, 0 failures, 0 errors, 52 pending.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 62 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_header_decode_20260518.json` reports `decode_empty_header_direct` ~872.0M ops/s vs `decode_empty_header_generic` ~30.2M ops/s; live publish/confirm lanes remain directional and broker-noisy.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

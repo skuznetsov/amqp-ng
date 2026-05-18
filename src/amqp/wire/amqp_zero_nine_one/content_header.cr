@@ -120,6 +120,16 @@ module Amqp::Wire::AmqpZeroNineOne
 
     record Decoded, class_id : UInt16, body_size : UInt64, properties : Amqp::Properties
 
+    def decode_empty(payload : Bytes) : Decoded?
+      return nil unless payload.size == 14
+
+      weight = read_u16_be(payload, 2)
+      flags = read_u16_be(payload, 12)
+      return nil unless weight == 0 && flags == 0
+
+      Decoded.new(read_u16_be(payload, 0), read_u64_be(payload, 4), Amqp::Properties.new)
+    end
+
     def decode(payload : Bytes) : Decoded
       io = IO::Memory.new(payload, false)
       class_id = io.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
@@ -159,6 +169,18 @@ module Amqp::Wire::AmqpZeroNineOne
       props.cluster_id = Types.read_shortstr(io) if (flags & FLAG_CLUSTER_ID) != 0
 
       Decoded.new(class_id, body_size, props)
+    end
+
+    private def read_u16_be(bytes : Bytes, offset : Int32) : UInt16
+      ((bytes[offset].to_u16 << 8) | bytes[offset + 1].to_u16).to_u16
+    end
+
+    private def read_u64_be(bytes : Bytes, offset : Int32) : UInt64
+      value = 0_u64
+      8.times do |i|
+        value = (value << 8) | bytes[offset + i].to_u64
+      end
+      value
     end
   end
 end

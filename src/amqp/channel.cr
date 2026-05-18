@@ -2299,7 +2299,8 @@ module Amqp
     private def process_header_frame(frame : Amqp::Wire::Frame) : Nil
       pending = @pending_method
       raise ProtocolError.new("channel #{@id}: header without method") if pending.nil?
-      decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode(frame.payload)
+      decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode_empty(frame.payload) ||
+                Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode(frame.payload)
       unless decoded.class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
         raise ProtocolError.new("channel #{@id}: header class #{decoded.class_id} != 60")
       end

@@ -68,13 +68,13 @@ rescue
   "<unparseable>"
 end
 
-def sample_rates(samples : Int32, count : Int32, & : ->) : Array(Float64)
+def sample_rates(label : String, samples : Int32, count : Int32, & : ->) : Array(Float64)
   rates = [] of Float64
   samples.times do
     started = Time.instant
     yield
     elapsed = Time.instant - started
-    raise "benchmark sample elapsed time was zero; increase workload count" unless elapsed.total_nanoseconds > 0
+    raise "#{label}: benchmark sample elapsed time was zero; increase workload count" unless elapsed.total_nanoseconds > 0
 
     rates << (count.to_f64 / elapsed.total_seconds)
   end
@@ -165,6 +165,18 @@ def parse_basic_ack_frame_direct(frame_bytes : Bytes, frame_max : UInt32) : {UIn
   {read_u64_be(frame_bytes, 11), (frame_bytes[19] & 0x01) != 0}
 end
 
+def decode_empty_header_generic(payload : Bytes) : UInt64
+  decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode(payload)
+  raise "expected empty properties" unless decoded.properties.empty?
+  decoded.body_size
+end
+
+def decode_empty_header_direct(payload : Bytes) : UInt64
+  decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode_empty(payload) ||
+            raise "expected direct empty header decode"
+  decoded.body_size
+end
+
 body = Bytes.new(body_bytes, 120_u8)
 single_message = Amqp::Message.new(body)
 full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
@@ -176,7 +188,7 @@ results = {} of String => Array(Float64)
 stages = {} of String => Array(Float64)
 queue = ""
 
-stages["encode_empty_publish_frames"] = sample_rates(samples, publish_n) do
+stages["encode_empty_publish_frames"] = sample_rates("encode_empty_publish_frames", samples, publish_n) do
   publish_n.times do
     io = IO::Memory.new
     write_empty_property_publish(io, 1_u16, "", "bench", body)
@@ -192,18 +204,59 @@ ack_frame = ack_frame_io.to_slice
   raise "bad ack parse" unless tag == 42_u64 && !multiple
 end
 
-stages["parse_basic_ack_frame_generic"] = sample_rates(samples, stage_n) do
+stages["parse_basic_ack_frame_generic"] = sample_rates("parse_basic_ack_frame_generic", samples, stage_n) do
   stage_n.times do
     tag, multiple = parse_basic_ack_frame_generic(ack_frame, 131_072_u32)
     raise "bad ack parse" unless tag == 42_u64 && !multiple
   end
 end
 
-stages["parse_basic_ack_frame_direct"] = sample_rates(samples, stage_n) do
+stages["parse_basic_ack_frame_direct"] = sample_rates("parse_basic_ack_frame_direct", samples, stage_n) do
   stage_n.times do
     tag, multiple = parse_basic_ack_frame_direct(ack_frame, 131_072_u32)
     raise "bad ack parse" unless tag == 42_u64 && !multiple
   end
+end
+
+empty_header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+  Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+  body.size.to_u64,
+  Amqp::Properties.new,
+)
+{decode_empty_header_generic(empty_header_payload),
+ decode_empty_header_direct(empty_header_payload)}.each do |body_size|
+  raise "bad empty header decode" unless body_size == body.size.to_u64
+end
+empty_header_payloads = Array.new(256) do |i|
+  Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+    Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+    body.size.to_u64 + i.to_u64,
+    Amqp::Properties.new,
+  )
+end
+
+stages["decode_empty_header_generic"] = sample_rates("decode_empty_header_generic", samples, stage_n) do
+  sum = 0_u64
+  expected = 0_u64
+  stage_n.times do |i|
+    index = i & 255
+    body_size = decode_empty_header_generic(empty_header_payloads[index])
+    expected &+= body.size.to_u64 + index.to_u64
+    sum &+= body_size
+  end
+  raise "bad empty header decode checksum" unless sum == expected
+end
+
+stages["decode_empty_header_direct"] = sample_rates("decode_empty_header_direct", samples, stage_n) do
+  sum = 0_u64
+  expected = 0_u64
+  stage_n.times do |i|
+    index = i & 255
+    body_size = decode_empty_header_direct(empty_header_payloads[index])
+    expected &+= body.size.to_u64 + index.to_u64
+    sum &+= body_size
+  end
+  raise "bad empty header decode checksum" unless sum == expected
 end
 
 Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
@@ -213,14 +266,14 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   ch.publish(single_message, "", queue)
   ch.queue_purge(queue)
 
-  results["publish_single"] = sample_rates(samples, publish_n) do
+  results["publish_single"] = sample_rates("publish_single", samples, publish_n) do
     publish_n.times do
       ch.publish(single_message, "", queue)
     end
     ch.queue_purge(queue)
   end
 
-  results["publish_batch"] = sample_rates(samples, publish_n) do
+  results["publish_batch"] = sample_rates("publish_batch", samples, publish_n) do
     remaining = publish_n
     while remaining >= batch_size
       ch.publish_batch(full_batch, "", queue)
@@ -230,7 +283,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_purge(queue)
   end
 
-  results["publish_batch_bytes"] = sample_rates(samples, publish_n) do
+  results["publish_batch_bytes"] = sample_rates("publish_batch_bytes", samples, publish_n) do
     remaining = publish_n
     while remaining >= batch_size
       ch.publish_batch(full_batch_bodies, "", queue)
@@ -243,7 +296,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   channel_counts.each do |channel_count|
     channels = Array.new(channel_count) { conn.channel }
 
-    results["publish_multi_channel_#{channel_count}"] = sample_rates(samples, publish_n) do
+    results["publish_multi_channel_#{channel_count}"] = sample_rates("publish_multi_channel_#{channel_count}", samples, publish_n) do
       publish_concurrently(channels, publish_n, single_message, queue)
       ch.queue_purge(queue)
     end
@@ -258,7 +311,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       pub_conns = Array.new(connection_count) { Amqp.connect(url, recovery: Amqp::Recovery::None) }
       channels = pub_conns.map(&.channel)
 
-      results["publish_multi_connection_#{connection_count}"] = sample_rates(samples, publish_n) do
+      results["publish_multi_connection_#{connection_count}"] = sample_rates("publish_multi_connection_#{connection_count}", samples, publish_n) do
         publish_concurrently(channels, publish_n, single_message, shared_queue)
         ch.queue_purge(shared_queue)
       end
@@ -269,7 +322,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
         name
       end.to_a
 
-      results["publish_multi_connection_separate_queues_#{connection_count}"] = sample_rates(samples, publish_n) do
+      results["publish_multi_connection_separate_queues_#{connection_count}"] = sample_rates("publish_multi_connection_separate_queues_#{connection_count}", samples, publish_n) do
         publish_concurrently(channels, publish_n, single_message, separate_queues)
         separate_queues.each { |name| ch.queue_purge(name) }
       end
@@ -290,7 +343,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   confirm_ch.publish_confirm(single_message, "", confirm_queue, timeout: 5.seconds)
   confirm_ch.queue_purge(confirm_queue)
 
-  results["confirm_sync"] = sample_rates(samples, confirm_n) do
+  results["confirm_sync"] = sample_rates("confirm_sync", samples, confirm_n) do
     confirm_n.times do
       confirm_ch.publish_confirm(single_message, "", confirm_queue, timeout: 5.seconds)
     end
@@ -300,7 +353,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   confirm_full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
   confirm_tail_messages = Array.new(confirm_n % batch_size) { Amqp::Message.new(body) }
 
-  results["confirm_batch_wait"] = sample_rates(samples, confirm_n) do
+  results["confirm_batch_wait"] = sample_rates("confirm_batch_wait", samples, confirm_n) do
     remaining = confirm_n
     while remaining >= batch_size
       confirm_ch.publish_batch(confirm_full_batch, "", confirm_queue)
@@ -314,7 +367,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   confirm_full_batch_bodies = Array.new(batch_size) { body }
   confirm_tail_bodies = Array.new(confirm_n % batch_size) { body }
 
-  results["confirm_batch_wait_bytes"] = sample_rates(samples, confirm_n) do
+  results["confirm_batch_wait_bytes"] = sample_rates("confirm_batch_wait_bytes", samples, confirm_n) do
     remaining = confirm_n
     while remaining >= batch_size
       confirm_ch.publish_batch(confirm_full_batch_bodies, "", confirm_queue)
@@ -328,7 +381,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   default_window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
   default_window_bodies = Array.new(confirm_n) { body }
 
-  results["confirm_window_default"] = sample_rates(samples, confirm_n) do
+  results["confirm_window_default"] = sample_rates("confirm_window_default", samples, confirm_n) do
     ok = confirm_ch.publish_confirm_batch(
       default_window_messages,
       "",
@@ -339,7 +392,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     confirm_ch.queue_purge(confirm_queue)
   end
 
-  results["confirm_window_bytes_default"] = sample_rates(samples, confirm_n) do
+  results["confirm_window_bytes_default"] = sample_rates("confirm_window_bytes_default", samples, confirm_n) do
     ok = confirm_ch.publish_confirm_batch(
       default_window_bodies,
       "",
@@ -354,7 +407,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
     window_bodies = Array.new(confirm_n) { body }
 
-    results["confirm_window_#{window_size}"] = sample_rates(samples, confirm_n) do
+    results["confirm_window_#{window_size}"] = sample_rates("confirm_window_#{window_size}", samples, confirm_n) do
       ok = confirm_ch.publish_confirm_batch(
         window_messages,
         "",
@@ -366,7 +419,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       confirm_ch.queue_purge(confirm_queue)
     end
 
-    results["confirm_window_bytes_#{window_size}"] = sample_rates(samples, confirm_n) do
+    results["confirm_window_bytes_#{window_size}"] = sample_rates("confirm_window_bytes_#{window_size}", samples, confirm_n) do
       ok = confirm_ch.publish_confirm_batch(
         window_bodies,
         "",

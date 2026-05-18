@@ -28,6 +28,27 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     CH.empty_frame(9_u16, 60_u16, 123_u64).should eq(expected.to_slice)
   end
 
+  it "direct-decodes an empty content-header payload equivalent to generic decode" do
+    payload = CH.encode(60_u16, 123_u64, Amqp::Properties.new)
+    direct = CH.decode_empty(payload)
+    generic = CH.decode(payload)
+
+    direct.should_not be_nil
+    direct = direct.not_nil!
+    direct.class_id.should eq(generic.class_id)
+    direct.body_size.should eq(generic.body_size)
+    direct.properties.empty?.should be_true
+  end
+
+  it "does not direct-decode non-empty properties or malformed empty headers" do
+    payload = CH.encode(60_u16, 123_u64, Amqp::Properties.new(content_type: "text/plain"))
+    CH.decode_empty(payload).should be_nil
+
+    malformed = CH.encode(60_u16, 123_u64, Amqp::Properties.new)
+    malformed[3] = 1_u8
+    CH.decode_empty(malformed).should be_nil
+  end
+
   it "content-type + persistent → flags 0x9000" do
     props = Amqp::Properties.new(
       content_type: "text/plain",
