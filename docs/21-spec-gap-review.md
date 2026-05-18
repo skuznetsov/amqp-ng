@@ -11,13 +11,14 @@ ranked repair queue for converting the matrix into executable evidence.
 
 ## Baseline
 
-- Latest no-broker full `crystal spec --error-trace` passes: 221 examples, 0 failures, 0 errors, 92 pending.
+- Latest no-broker full `crystal spec --error-trace` passes: 222 examples, 0 failures, 0 errors, 92 pending.
 - Most no-broker pending examples are live AMQP checks. With a plain broker available, the remaining default pending examples are gated live checks: TLS (`AMQP_TLS_URL`), invasive backpressure (`AMQP_BACKPRESSURE_LIVE`), and Docker broker chaos (`AMQP_CHAOS_DOCKER_CONTAINER`).
 - Latest focused LavinMQ publish/confirm smoke passes: 72 examples, 0 failures, 0 errors, 0 pending.
 - Latest focused LavinMQ no-wait/API smoke passes: 39 examples, 0 failures, 0 errors, 0 pending.
 - The earlier local full opt-in suite passed before later parity additions; rerun it before turning this local branch into a public release artifact.
 - `tools/perf_publish.cr` now exists as a local publish benchmark witness, but `spec/perf/` remains a roadmap item.
 - `Time.monotonic` deprecation warnings were removed.
+- `T-CODEC-CONTENT-006` now has a deterministic non-live channel content-assembly guard.
 
 ## Quadrumvirate Synthesis
 

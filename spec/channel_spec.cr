@@ -1,6 +1,16 @@
 require "./spec_helper"
 
+class Amqp::Connection
+  def self.__spec_new : Amqp::Connection
+    new(Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/"))
+  end
+end
+
 class Amqp::Channel
+  def self.__spec_new(id : UInt16 = 1_u16) : Amqp::Channel
+    new(Amqp::Connection.__spec_new, id)
+  end
+
   def __spec_set_flow_active(active : Bool) : Nil
     set_flow_active(active)
   end
@@ -8,9 +18,68 @@ class Amqp::Channel
   def __spec_flow_active? : Bool
     @flow_mutex.synchronize { @flow_active }
   end
+
+  def __spec_process_content_method_frame(frame : Amqp::Wire::Frame) : Nil
+    process_method_frame(frame)
+  end
+
+  def __spec_process_content_header_frame(frame : Amqp::Wire::Frame) : Nil
+    process_header_frame(frame)
+  end
+
+  def __spec_process_content_body_frame(frame : Amqp::Wire::Frame) : Nil
+    process_body_frame(frame)
+  end
+end
+
+private def basic_deliver_payload : Bytes
+  io = IO::Memory.new
+  io.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+  io.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER, IO::ByteFormat::NetworkEndian)
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, "ctag-1")
+  io.write_bytes(1_u64, IO::ByteFormat::NetworkEndian)
+  io.write_byte(0_u8)
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, "")
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, "queue-a")
+  io.to_slice
 end
 
 describe Amqp::Channel do
+  describe "content assembly" do
+    it "raises when body frames overflow the declared content size" do
+      channel = Amqp::Channel.__spec_new
+      channel_id = 1_u16
+
+      channel.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(
+          Amqp::Wire::FrameType::Method,
+          channel_id,
+          basic_deliver_payload
+        )
+      )
+      channel.__spec_process_content_header_frame(
+        Amqp::Wire::Frame.new(
+          Amqp::Wire::FrameType::Header,
+          channel_id,
+          Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+            Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+            3_u64,
+            Amqp::Properties.new
+          )
+        )
+      )
+
+      channel.__spec_process_content_body_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, channel_id, Bytes[1, 2])
+      )
+      expect_raises(Amqp::ProtocolError, /body fragment overflows declared size/) do
+        channel.__spec_process_content_body_frame(
+          Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, channel_id, Bytes[3, 4])
+        )
+      end
+    end
+  end
+
   describe "(live broker)" do
     it "opens and closes a channel" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?

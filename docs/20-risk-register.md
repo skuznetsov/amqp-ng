@@ -293,8 +293,10 @@ of `UInt32::MAX`, causing the shard to allocate ~4 GB. Or send
 deeply-nested field-tables to OOM the decoder.
 
 **Mitigation.** The frame reader rejects unknown frame types, bad
-frame-end bytes, and payloads larger than `frame_max - 8`. The field
-codec rejects unsupported decimal tags and unknown field-value tags.
+frame-end bytes, and payloads larger than `frame_max - 8`. Channel
+content assembly rejects body frames that overflow the declared content
+body size. The field codec rejects unsupported decimal tags and unknown
+field-value tags.
 
 The current implementation does not expose a maximum content body-size
 cap and does not have an executable nested field-table depth cap. A
