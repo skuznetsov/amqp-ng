@@ -2173,7 +2173,13 @@ module Amqp
     end
 
     private def enqueue_confirm_callback(callback : ConfirmCallback, ok : Bool) : Nil
-      @confirm_callback_queue.send({callback, ok})
+      select
+      when @confirm_callback_queue.send({callback, ok})
+      else
+        spawn(name: "amqp-confirm-callback-overflow-#{@id}") do
+          call_confirm_callback(callback, ok)
+        end
+      end
     rescue ::Channel::ClosedError
       call_confirm_callback(callback, ok)
     end

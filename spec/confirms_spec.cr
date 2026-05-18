@@ -563,6 +563,54 @@ describe "publisher confirms" do
       end
     end
 
+    it "does not block confirm settlement when callback dispatch queue is full" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        release = ::Channel(Nil).new
+        callback_results = ::Channel(Bool).new(1_100)
+        last_tag = 0_u64
+
+        1_100.times do
+          last_tag = ch.__spec_register_callback_pending_confirm(->(ok : Bool) {
+            release.receive?
+            callback_results.send(ok)
+            nil
+          })
+        end
+
+        settled = ::Channel(Exception?).new(1)
+        spawn do
+          begin
+            ch.__spec_settle_publish(last_tag, multiple: true, nacked: false)
+            settled.send(nil)
+          rescue ex
+            settled.send(ex)
+          end
+        end
+
+        select
+        when ex = settled.receive
+          raise ex if ex
+        when timeout(1.second)
+          fail "confirm settlement blocked behind slow callback dispatch"
+        end
+
+        release.close
+        1_100.times do
+          select
+          when ok = callback_results.receive
+            ok.should be_true
+          when timeout(2.seconds)
+            fail "timed out waiting for callback confirm"
+          end
+        end
+        ch.__spec_pending_confirm_count.should eq(0)
+        ch.close
+      end
+    end
+
     it "allows concurrent publish_confirm calls on one channel without tearing frames" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

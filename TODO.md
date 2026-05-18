@@ -192,6 +192,11 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full `src/lavinmqperf.cr` compiles against the amqp-ng shim on Crystal 1.19.1 with `-Dpreview_mt -Dexecution_context`; compatibility additions include minimal `AMQ::Protocol::Properties`, raw `AMQP::Client::Frame::Basic::Consume`, `Connection#write`, `Client#host=`, `Queue#delete`, and `queue_declare(no_wait:)`.
   - Refuted branch: a batched dispatcher queue based on a custom mutex/waker hung the live confirm spec; retain the simpler Crystal `Channel` dispatcher until a smaller falsifier proves a replacement.
   - Cutline: full `lavinmq` target is not yet a clean amqp-ng signal on this checkout because original LavinMQ still has unrelated compile gates on Crystal 1.20.1. Use Crystal 1.19.1 plus focused shovel/perf wrappers for the current apples-to-apples comparison.
+- [x] Apply the first higher-level LTP/WBA callback-isolation move.
+  - Frame: `Window` = slow/full confirm callback dispatch queue; `Transport` = broker ack settlement through the channel handler; `Potential` = `(handler_blocking_risk, callback_fiber_count, pending_confirms, latency)`.
+  - Progress: `enqueue_confirm_callback` now uses nonblocking send to the per-channel dispatcher and falls back to an overflow fiber only when the callback queue cannot accept immediately.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/confirms_spec.cr --error-trace` exits 0: 31 examples, 0 failures, 0 errors, 0 pending, including a filled callback-dispatch queue falsifier.
+  - Adversary: this trades pathological callback backpressure for bounded normal-path allocation plus overflow fibers under slow user callbacks; that is preferable for channel-handler liveness, but callback concurrency is now explicitly best-effort in overflow conditions.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
