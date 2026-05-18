@@ -76,7 +76,6 @@ loop do
   break if delivery.is_a?(EndSentinel)
   begin
     yield delivery
-    ch.ack(delivery.delivery_tag) if auto_ack
   rescue ex
     handle_block_exception(ex, delivery)
   end

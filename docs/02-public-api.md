@@ -409,8 +409,9 @@ end
 class Amqp::Channel
   # Blocks the calling fiber on this channel's consumer for the queue.
   # Yields each DeliverMessage to the block. The block runs on the
-  # CALLER's fiber, in order. Return from the block to ack (when
-  # `auto_ack: true`) or leave the message for explicit ack.
+  # CALLER's fiber, in order. `auto_ack: true` maps to AMQP no-ack, so
+  # the broker considers each delivery acknowledged before the block
+  # runs. With `auto_ack: false`, callers ack/reject explicitly.
   def consume(queue : String,
               *,
               consumer_tag : String = "",
@@ -425,10 +426,12 @@ end
 - The block returns when the consumer is cancelled (channel close,
   caller-side cancel via `Subscription#close`, or broker-side cancel
   `basic.cancel`).
-- `auto_ack: true` issues `basic.ack` after the block returns
-  normally. Exceptions from the block propagate to the caller of
-  `consume` AND issue `basic.reject{requeue: true}` for the offending
-  delivery. The behavior is documented in `docs/09-consumer.md`.
+- `auto_ack: true` MUST NOT issue `basic.ack`; it is AMQP no-ack.
+  Exceptions from the block propagate to the caller of `consume`.
+- With `auto_ack: false`, exceptions from the block propagate to the
+  caller of `consume` AND issue `basic.reject{requeue: true}` for the
+  offending delivery. Normal returns leave ack/reject under caller
+  control. The behavior is documented in `docs/09-consumer.md`.
 - `consume` MUST NOT spawn its own fiber. The caller has chosen to
   block this fiber for the consumer's lifetime; that is the entire
   point of the block form.

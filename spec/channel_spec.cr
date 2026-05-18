@@ -95,6 +95,51 @@ describe Amqp::Channel do
       end
     end
 
+    it "does not ack again from block consume when auto_ack is broker no-ack" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.publish("", info.name, "no-ack-block".to_slice)
+
+        delivered = ::Channel(Nil).new(1)
+        failed = ::Channel(Exception?).new(1)
+        closed = ::Channel(Tuple(UInt16, String)).new(1)
+        ch.on_close do |code, text|
+          closed.send({code, text})
+        end
+
+        spawn do
+          begin
+            ch.consume(info.name, auto_ack: true) do |delivery|
+              String.new(delivery.body).should eq("no-ack-block")
+              delivered.send(nil)
+            end
+            failed.send(nil)
+          rescue ex
+            failed.send(ex)
+          end
+        end
+
+        select
+        when delivered.receive
+        when timeout(2.seconds)
+          fail "timed out waiting for block consumer delivery"
+        end
+
+        select
+        when event = closed.receive
+          fail "channel closed after no-ack block delivery: #{event[0]} #{event[1]}"
+        when timeout(200.milliseconds)
+        end
+
+        ch.close
+        if ex = failed.receive
+          raise ex
+        end
+      end
+    end
+
     it "publishes a batch under one channel operation" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

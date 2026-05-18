@@ -1197,8 +1197,8 @@ module Amqp
         delivery = sub.receive
         begin
           yield delivery
-          delivery.ack if auto_ack
         rescue ex
+          Log.warn(exception: ex) { "auto_ack consumer block failed after broker-side ack" } if auto_ack
           delivery.reject(requeue: true) unless auto_ack
           raise ex
         end

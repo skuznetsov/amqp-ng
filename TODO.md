@@ -351,6 +351,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 199 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 31 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_deliver_string_cache_20260518.json` reports `consume_no_ack_preloaded` median ~511.7k msg/s and `consume_ack_preloaded` median ~436.9k. Treat this as delivery metadata allocation reduction with directional no-ack consume signal; ack consume remains noisy.
+- [x] Fix block-form `consume(auto_ack: true)` no-ack semantics.
+  - Problem: block-form `consume` passed `auto_ack` through as AMQP `no_ack`, but still issued `basic.ack` after a successful block when `auto_ack: true`, which can close the channel with an unknown delivery-tag precondition failure on real brokers.
+  - Progress: removed the client-side ack in no-ack mode, kept reject-on-exception only for manual-ack mode, and aligned `docs/02-public-api.md` / `docs/09-consumer.md` with broker no-ack semantics.
+  - Evidence: focused default `/opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 21 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including a block-consume no-ack channel-liveness falsifier.
+  - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 200 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
