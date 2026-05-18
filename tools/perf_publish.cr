@@ -337,6 +337,36 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_delete(shared_queue) rescue nil
   end
 
+  consume_queue = "amqp-ng-bench-consume-#{Process.pid}-#{Time.utc.to_unix_ms}"
+  ch.queue_declare(consume_queue, exclusive: true)
+  begin
+    results["consume_no_ack_preloaded"] = [] of Float64
+    samples.times do
+      remaining = publish_n
+      while remaining >= batch_size
+        ch.publish_batch(full_batch_bodies, "", consume_queue)
+        remaining -= batch_size
+      end
+      ch.publish_batch(tail_bodies, "", consume_queue) unless tail_bodies.empty?
+
+      started = Time.instant
+      sub = ch.consume(consume_queue, no_ack: true, buffer: {publish_n, 8192}.min)
+      publish_n.times do
+        delivery = sub.receive
+        raise "bad consume payload size" unless delivery.body.size == body.size
+      end
+      elapsed = Time.instant - started
+      raise "consume_no_ack_preloaded: benchmark sample elapsed time was zero; increase workload count" unless elapsed.total_nanoseconds > 0
+
+      results["consume_no_ack_preloaded"] << (publish_n.to_f64 / elapsed.total_seconds)
+    ensure
+      sub.try &.close rescue nil
+      ch.queue_purge(consume_queue) rescue nil
+    end
+  ensure
+    ch.queue_delete(consume_queue) rescue nil
+  end
+
   confirm_ch = conn.channel
   confirm_queue = confirm_ch.queue_declare("", exclusive: true, auto_delete: true).name
   confirm_ch.confirm_select

@@ -244,6 +244,12 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 62 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_header_decode_20260518.json` reports `decode_empty_header_direct` ~872.0M ops/s vs `decode_empty_header_generic` ~30.2M ops/s; live publish/confirm lanes remain directional and broker-noisy.
+- [x] Add a preloaded consume lane to the checked-in benchmark harness.
+  - Frame: `Window` = preloaded no-ack deliveries drained through `Subscription#receive`; `Transport` = broker deliveries -> channel handler -> subscription mailbox -> user receive loop; `Potential` = `(read_side_visibility, handler_cpu, mailbox_pressure, consume_latency)`.
+  - Progress: `tools/perf_publish.cr` now emits `consume_no_ack_preloaded` after preloading a named exclusive queue outside the timed window. The first attempt used a server-named auto-delete queue and was refuted because `sub.close` deleted the queue before cleanup, producing a broker 404 and closing the channel.
+  - Evidence: `crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, `crystal tool format --check src spec tools/perf_publish.cr`, and `git diff --check` exit 0.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_consume_lane_20260518.json` emits `consume_no_ack_preloaded` with median ~247.3k msg/s over samples ~131.1k/~396.6k/~247.3k; treat this as a noisy read-side baseline, not a release guarantee.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
