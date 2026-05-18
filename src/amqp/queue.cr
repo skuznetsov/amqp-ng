@@ -13,7 +13,7 @@ module Amqp
 
     def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments | NamedTuple = Arguments.new) : self
       arguments = Amqp.coerce_arguments(arguments)
-      @channel.queue_bind(@name, exchange, routing_key, arguments)
+      @channel.queue_bind(@name, exchange, routing_key, arguments, no_wait: no_wait)
       self
     end
 

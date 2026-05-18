@@ -616,5 +616,32 @@ describe Amqp::Channel do
         end
       end
     end
+
+    it "uses broker no-wait for compatible topology and cancel helpers" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        conn.with_channel do |ch|
+          queue = "amqp-ng-nowait-q-#{Random::Secure.hex(4)}"
+          exchange = "amqp-ng-nowait-ex-#{Random::Secure.hex(4)}"
+
+          ch.queue_declare(queue, auto_delete: false, no_wait: true)
+          ch.queue_declare(queue, passive: true).name.should eq(queue)
+          ch.exchange_declare(exchange, "direct", auto_delete: true)
+          ch.queue_bind(queue, exchange, "rk", no_wait: true)
+
+          ch.publish(exchange, "rk", "nowait".to_slice)
+          msg = ch.get(queue).not_nil!
+          String.new(msg.body).should eq("nowait")
+          msg.ack
+
+          sub = ch.consume(queue, no_ack: true)
+          ch.basic_cancel(sub.consumer_tag, no_wait: true)
+          sub.closed?.should be_true
+          ch.queue_purge(queue).should eq(0_u32)
+          ch.exchange_delete(exchange)
+          ch.queue_delete(queue)
+        end
+      end
+    end
   end
 end

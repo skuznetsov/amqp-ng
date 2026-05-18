@@ -265,11 +265,12 @@ spec quirk because the spec authors inserted bind/unbind out of order.
 | `durable`     | bit      |                                           |
 | `auto-delete` | bit      |                                           |
 | `internal`    | bit      |                                           |
-| `no-wait`     | bit      | If true, broker MUST NOT send `declare-ok` (v0 MUST send `false`) |
+| `no-wait`     | bit      | If true, broker MUST NOT send `declare-ok` |
 | `arguments`   | field-table |                                        |
 
 The five bits (`passive, durable, auto-delete, internal, no-wait`)
-pack into a single octet, LSB-first. v0 always sends `no-wait = 0`.
+pack into a single octet, LSB-first. v0 public exchange declaration
+uses `no-wait = 0`; compatibility wire helpers can encode the bit.
 
 ### 5.2 exchange.delete (40.20)
 
@@ -336,6 +337,10 @@ queue.declare-ok response args:
 The codec MUST expose `queue` (echoed back, important when client
 sent empty string for server-generated names) and the two counts in
 the public Channel#queue_declare return value.
+
+The compatibility `queue_declare(..., no_wait: true)` path sets
+`no-wait = 1` and returns the requested queue name with zero counts
+because the broker does not send `declare-ok`.
 
 ### 6.2 queue.bind (50.20)
 

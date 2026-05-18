@@ -212,8 +212,10 @@ module AMQP
       def queue_bind(queue : String,
                      exchange : String,
                      routing_key : String = "",
-                     args arguments = Arguments.new) : Nil
-        @inner.queue_bind(queue, exchange, routing_key, ::AMQP::Client.coerce_arguments(arguments))
+                     args arguments = Arguments.new,
+                     no_wait : Bool = false) : Nil
+        @inner.queue_bind(queue, exchange, routing_key,
+          ::AMQP::Client.coerce_arguments(arguments), no_wait: no_wait)
       end
 
       def queue_delete(name : String,
@@ -337,7 +339,7 @@ module AMQP
       end
 
       def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments = Arguments.new) : self
-        @channel.queue_bind(@name, exchange, routing_key, args: arguments)
+        @channel.queue_bind(@name, exchange, routing_key, no_wait: no_wait, args: arguments)
         self
       end
 
@@ -380,13 +382,13 @@ module AMQP
 
       def bind(source : String, routing_key : String = "", no_wait : Bool = false, args arguments = Arguments.new) : self
         @channel.inner.exchange_bind(@name, source, routing_key,
-          ::AMQP::Client.coerce_arguments(arguments))
+          ::AMQP::Client.coerce_arguments(arguments), no_wait: no_wait)
         self
       end
 
-      def unbind(source : String, routing_key : String = "", args arguments = Arguments.new) : self
+      def unbind(source : String, routing_key : String = "", args arguments = Arguments.new, no_wait : Bool = false) : self
         @channel.inner.exchange_unbind(@name, source, routing_key,
-          ::AMQP::Client.coerce_arguments(arguments))
+          ::AMQP::Client.coerce_arguments(arguments), no_wait: no_wait)
         self
       end
 

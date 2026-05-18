@@ -57,10 +57,11 @@ module Amqp::Wire::AmqpZeroNineOne
       getter no_local : Bool
       getter no_ack : Bool
       getter exclusive : Bool
+      getter no_wait : Bool
       getter arguments : Amqp::Arguments
 
       def initialize(@queue, @consumer_tag, @no_local, @no_ack, @exclusive,
-                     @arguments)
+                     @arguments, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -70,7 +71,7 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian) # reserved-1
         Types.write_shortstr(io, @queue)
         Types.write_shortstr(io, @consumer_tag)
-        BitPack.write(io, [@no_local, @no_ack, @exclusive, false]) # no-wait=false
+        BitPack.write(io, [@no_local, @no_ack, @exclusive, @no_wait])
         Types.write_field_table(io, @arguments)
         io.to_slice
       end
@@ -99,7 +100,7 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
         io.write_bytes(METHOD_ID_BASIC_CANCEL, IO::ByteFormat::NetworkEndian)
         Types.write_shortstr(io, @consumer_tag)
-        BitPack.write(io, [false]) # no-wait
+        BitPack.write(io, [@no_wait])
         io.to_slice
       end
 

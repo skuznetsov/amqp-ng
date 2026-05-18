@@ -339,13 +339,17 @@ module Amqp
     def exchange_bind(destination : String,
                       source : String,
                       routing_key : String = "",
-                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
+                      *,
+                      no_wait : Bool = false) : Nil
       arguments = Amqp.coerce_arguments(arguments)
-      env = sync_rpc(
-        Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Bind.new(
-          destination, source, routing_key, arguments,
-        ).to_payload
+      payload = Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Bind.new(
+        destination, source, routing_key, arguments, no_wait,
       )
+        .to_payload
+      return write_no_wait_method(payload) if no_wait
+
+      env = sync_rpc(payload)
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_EXCHANGE,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_EXCHANGE_BIND_OK)
     end
@@ -353,13 +357,17 @@ module Amqp
     def exchange_unbind(destination : String,
                         source : String,
                         routing_key : String = "",
-                        arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+                        arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
+                        *,
+                        no_wait : Bool = false) : Nil
       arguments = Amqp.coerce_arguments(arguments)
-      env = sync_rpc(
-        Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Unbind.new(
-          destination, source, routing_key, arguments,
-        ).to_payload
+      payload = Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Unbind.new(
+        destination, source, routing_key, arguments, no_wait,
       )
+        .to_payload
+      return write_no_wait_method(payload) if no_wait
+
+      env = sync_rpc(payload)
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_EXCHANGE,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_EXCHANGE_UNBIND_OK)
     end
@@ -369,13 +377,27 @@ module Amqp
                       durable : Bool = false,
                       exclusive : Bool = false,
                       auto_delete : Bool = false,
-                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : QueueInfo
+                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
+                      *,
+                      no_wait : Bool = false) : QueueInfo
       arguments = Amqp.coerce_arguments(arguments)
-      env = sync_rpc(
-        Amqp::Wire::AmqpZeroNineOne::QueueMethods::Declare.new(
-          name, passive, durable, exclusive, auto_delete, arguments,
-        ).to_payload
+      payload = Amqp::Wire::AmqpZeroNineOne::QueueMethods::Declare.new(
+        name, passive, durable, exclusive, auto_delete, arguments, no_wait,
       )
+        .to_payload
+      if no_wait
+        write_no_wait_method(payload)
+        if !passive && !name.empty?
+          @topology_mutex.synchronize do
+            @topology_queues[name] = QueueOp.new(
+              name, name, passive, durable, exclusive, auto_delete, arguments,
+            )
+          end
+        end
+        return QueueInfo.new(name, 0_u32, 0_u32)
+      end
+
+      env = sync_rpc(payload)
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_DECLARE_OK)
       ok = Amqp::Wire::AmqpZeroNineOne::QueueMethods::DeclareOk.read(env.body)
@@ -396,31 +418,29 @@ module Amqp
                                        exclusive : Bool = false,
                                        auto_delete : Bool = false,
                                        arguments : Amqp::Arguments = Amqp::Arguments.new) : QueueInfo
-      ensure_open!
-      payload = IO::Memory.new
-      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
-        IO::ByteFormat::NetworkEndian)
-      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_DECLARE,
-        IO::ByteFormat::NetworkEndian)
-      payload.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
-      Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(payload, name)
-      Amqp::Wire::AmqpZeroNineOne::BitPack.write(payload,
-        [passive, durable, exclusive, auto_delete, true])
-      Amqp::Wire::AmqpZeroNineOne::Types.write_field_table(payload, arguments)
-      @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload.to_slice)
-      QueueInfo.new(name, 0_u32, 0_u32)
+      queue_declare(name, passive, durable, exclusive, auto_delete, arguments, no_wait: true)
     end
 
     def queue_bind(queue : String,
                    exchange : String,
                    routing_key : String = "",
-                   arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+                   arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
+                   *,
+                   no_wait : Bool = false) : Nil
       arguments = Amqp.coerce_arguments(arguments)
-      env = sync_rpc(
-        Amqp::Wire::AmqpZeroNineOne::QueueMethods::Bind.new(
-          queue, exchange, routing_key, arguments,
-        ).to_payload
+      payload = Amqp::Wire::AmqpZeroNineOne::QueueMethods::Bind.new(
+        queue, exchange, routing_key, arguments, no_wait,
       )
+        .to_payload
+      if no_wait
+        write_no_wait_method(payload)
+        @topology_mutex.synchronize do
+          @topology_bindings << BindOp.new(queue, exchange, routing_key, arguments)
+        end
+        return
+      end
+
+      env = sync_rpc(payload)
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_BIND_OK)
       @topology_mutex.synchronize do
@@ -1020,7 +1040,7 @@ module Amqp
     end
 
     def basic_cancel(consumer_tag : String, no_wait : Bool = false) : Nil
-      cancel(consumer_tag)
+      cancel(consumer_tag, no_wait: no_wait)
     end
 
     def basic_ack(delivery_tag : UInt64, multiple : Bool = false) : Nil
@@ -1246,10 +1266,17 @@ module Amqp
       end
     end
 
-    def cancel(consumer_tag : String) : Nil
-      env = sync_rpc(
-        Amqp::Wire::AmqpZeroNineOne::BasicMethods::Cancel.new(consumer_tag).to_payload
-      )
+    def cancel(consumer_tag : String, *, no_wait : Bool = false) : Nil
+      payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Cancel.new(consumer_tag, no_wait).to_payload
+      if no_wait
+        write_no_wait_method(payload)
+        sub = delete_consumer(consumer_tag)
+        @topology_mutex.synchronize { @topology_consumers.delete(consumer_tag) }
+        sub.try &.mark_closed
+        return
+      end
+
+      env = sync_rpc(payload)
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CANCEL_OK)
       sub = delete_consumer(consumer_tag)
@@ -2340,6 +2367,16 @@ module Amqp
       enter_operation
       begin
         sync_rpc_locked(payload, default_rpc_timeout)
+      ensure
+        leave_operation
+      end
+    end
+
+    private def write_no_wait_method(payload : Bytes) : Nil
+      enter_operation
+      begin
+        ensure_open!
+        @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload)
       ensure
         leave_operation
       end

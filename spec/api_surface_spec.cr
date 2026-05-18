@@ -107,9 +107,13 @@ describe "documented public API surface" do
     typeof(ch.queue_unbind("q", "ex", "rk")).should eq(Nil)
     typeof(ch.exchange_delete("ex")).should eq(Nil)
     typeof(ch.exchange_bind("dest", "src", "rk")).should eq(Nil)
+    typeof(ch.exchange_bind("dest", "src", "rk", no_wait: true)).should eq(Nil)
     typeof(ch.exchange_unbind("dest", "src", "rk")).should eq(Nil)
+    typeof(ch.exchange_unbind("dest", "src", "rk", no_wait: true)).should eq(Nil)
     typeof(ch.queue_declare("q", arguments: {ttl: 1000_i32})).should eq(Amqp::QueueInfo)
+    typeof(ch.queue_declare("q", no_wait: true)).should eq(Amqp::QueueInfo)
     typeof(ch.queue_bind("q", "ex", "rk", {priority: 1_u8})).should eq(Nil)
+    typeof(ch.queue_bind("q", "ex", "rk", no_wait: true)).should eq(Nil)
     typeof(ch.queue_unbind("q", "ex", "rk", {priority: 1_u8})).should eq(Nil)
     typeof(ch.exchange_declare("ex", arguments: {alternate_exchange: "ae"})).should eq(Nil)
     typeof(ch.exchange_bind("dest", "src", "rk", {level: 1_i16})).should eq(Nil)
@@ -153,6 +157,7 @@ describe "documented public API surface" do
     exchange = uninitialized Amqp::Exchange
     typeof(queue.name).should eq(String)
     typeof(queue.bind("ex", "rk")).should eq(Amqp::Queue)
+    typeof(queue.bind("ex", "rk", no_wait: true)).should eq(Amqp::Queue)
     typeof(queue.bind("ex", "rk", args: {ttl: 1_i32})).should eq(Amqp::Queue)
     typeof(queue.unbind("ex", "rk")).should eq(Amqp::Queue)
     typeof(queue.unbind("ex", "rk", args: {ttl: 1_i32})).should eq(Amqp::Queue)
@@ -172,8 +177,10 @@ describe "documented public API surface" do
 
     typeof(exchange.name).should eq(String)
     typeof(exchange.bind("src", "rk")).should eq(Amqp::Exchange)
+    typeof(exchange.bind("src", "rk", no_wait: true)).should eq(Amqp::Exchange)
     typeof(exchange.bind("src", "rk", args: {ttl: 1_i32})).should eq(Amqp::Exchange)
     typeof(exchange.unbind("src", "rk")).should eq(Amqp::Exchange)
+    typeof(exchange.unbind("src", "rk", no_wait: true)).should eq(Amqp::Exchange)
     typeof(exchange.unbind("src", "rk", args: {ttl: 1_i32})).should eq(Amqp::Exchange)
     typeof(exchange.publish("x", "rk")).should eq(UInt64)
     typeof(exchange.publish_confirm("x", "rk")).should eq(Bool)
@@ -221,6 +228,8 @@ describe "documented public API surface" do
     typeof(ch.queue_declare("q")[:message_count]).should eq(UInt32)
     typeof(ch.queue("q", durable: true, auto_delete: false, args: AMQP::Client::Arguments.new)).should eq(AMQP::Client::Queue)
     typeof(ch.queue("q", durable: true, auto_delete: false, args: {ttl: 1000_i32})).should eq(AMQP::Client::Queue)
+    typeof(ch.queue_bind("q", "ex", "rk", AMQP::Client::Arguments.new)).should eq(Nil)
+    typeof(ch.queue_bind("q", "ex", "rk", no_wait: true, args: {ttl: 1000_i32})).should eq(Nil)
     typeof(ch.prefetch(count: 1_u16)).should eq(Nil)
     typeof(ch.confirm_select).should eq(Nil)
     typeof(ch.wait_for_confirms).should eq(Bool)
@@ -235,6 +244,10 @@ describe "documented public API surface" do
     typeof(q.bind("", "rk", args: {ttl: 1000_i32})).should eq(AMQP::Client::Queue)
     typeof(q.subscribe(tag: "c", no_ack: true, block: true) { |msg| msg.body_io.to_slice; nil }).should eq(String)
     typeof(q.subscribe(tag: "c", no_ack: true, block: true, args: {ttl: 1000_i32}) { |msg| msg.body_io.to_slice; nil }).should eq(String)
+
+    ex = uninitialized AMQP::Client::Exchange
+    typeof(ex.unbind("src", "rk", AMQP::Client::Arguments.new)).should eq(AMQP::Client::Exchange)
+    typeof(ex.unbind("src", "rk", no_wait: true, args: {ttl: 1000_i32})).should eq(AMQP::Client::Exchange)
 
     msg = uninitialized AMQP::Client::DeliverMessage
     typeof(msg.body_io).should eq(IO::Memory)

@@ -283,7 +283,7 @@ Current default local gate:
 crystal spec --error-trace
 ```
 
-Latest no-broker result: `211 examples, 0 failures, 0 errors, 91 pending`.
+Latest no-broker result: `215 examples, 0 failures, 0 errors, 92 pending`.
 Most pending examples are live-broker specs that intentionally skip when
 `AMQP_URL` is unreachable.
 
@@ -291,10 +291,10 @@ Latest focused LavinMQ publish/confirm smoke:
 `72 examples, 0 failures, 0 errors, 0 pending` for
 `spec/message_spec.cr`, `spec/api_surface_spec.cr`,
 `spec/channel_spec.cr`, and `spec/confirms_spec.cr`.
-Latest focused LavinMQ topology/API smoke:
-`37 examples, 0 failures, 0 errors, 0 pending` for
-`spec/arguments_spec.cr`, `spec/api_surface_spec.cr`, and
-`spec/channel_spec.cr`.
+Latest focused LavinMQ no-wait/API smoke:
+`39 examples, 0 failures, 0 errors, 0 pending` for
+`spec/wire/no_wait_methods_spec.cr`, `spec/api_surface_spec.cr`,
+and `spec/channel_spec.cr`.
 
 Additional gates used for this branch:
 
@@ -345,8 +345,8 @@ Implemented compatibility helpers include:
 
 Compatibility notes:
 
-- Some `no_wait` overload semantics are accepted but not always
-  broker-no-wait optimized.
+- `no_wait` compatibility overloads on queue declare, queue bind,
+  exchange bind/unbind, and basic cancel emit broker no-wait frames.
 - NamedTuple `args` sugar is accepted for topology/consumer helpers
   and coerced into `Amqp::Arguments`; use explicit `Amqp::Arguments`
   when you need to make AMQP field widths visually obvious.

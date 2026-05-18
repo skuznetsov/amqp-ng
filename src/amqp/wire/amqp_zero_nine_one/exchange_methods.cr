@@ -23,10 +23,11 @@ module Amqp::Wire::AmqpZeroNineOne
       getter durable : Bool
       getter auto_delete : Bool
       getter internal : Bool
+      getter no_wait : Bool
       getter arguments : Amqp::Arguments
 
       def initialize(@name, @type, @passive, @durable, @auto_delete, @internal,
-                     @arguments)
+                     @arguments, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -36,7 +37,7 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian) # reserved-1
         Types.write_shortstr(io, @name)
         Types.write_shortstr(io, @type)
-        BitPack.write(io, [@passive, @durable, @auto_delete, @internal, false])
+        BitPack.write(io, [@passive, @durable, @auto_delete, @internal, @no_wait])
         Types.write_field_table(io, @arguments)
         io.to_slice
       end
@@ -51,8 +52,9 @@ module Amqp::Wire::AmqpZeroNineOne
     struct Delete
       getter name : String
       getter if_unused : Bool
+      getter no_wait : Bool
 
-      def initialize(@name, @if_unused)
+      def initialize(@name, @if_unused, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -61,7 +63,7 @@ module Amqp::Wire::AmqpZeroNineOne
         io.write_bytes(METHOD_ID_EXCHANGE_DELETE, IO::ByteFormat::NetworkEndian)
         io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
         Types.write_shortstr(io, @name)
-        BitPack.write(io, [@if_unused, false])
+        BitPack.write(io, [@if_unused, @no_wait])
         io.to_slice
       end
     end
@@ -76,9 +78,10 @@ module Amqp::Wire::AmqpZeroNineOne
       getter destination : String
       getter source : String
       getter routing_key : String
+      getter no_wait : Bool
       getter arguments : Amqp::Arguments
 
-      def initialize(@destination, @source, @routing_key, @arguments)
+      def initialize(@destination, @source, @routing_key, @arguments, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -89,7 +92,7 @@ module Amqp::Wire::AmqpZeroNineOne
         Types.write_shortstr(io, @destination)
         Types.write_shortstr(io, @source)
         Types.write_shortstr(io, @routing_key)
-        BitPack.write(io, [false]) # no-wait
+        BitPack.write(io, [@no_wait])
         Types.write_field_table(io, @arguments)
         io.to_slice
       end
@@ -105,9 +108,10 @@ module Amqp::Wire::AmqpZeroNineOne
       getter destination : String
       getter source : String
       getter routing_key : String
+      getter no_wait : Bool
       getter arguments : Amqp::Arguments
 
-      def initialize(@destination, @source, @routing_key, @arguments)
+      def initialize(@destination, @source, @routing_key, @arguments, @no_wait = false)
       end
 
       def to_payload : Bytes
@@ -118,7 +122,7 @@ module Amqp::Wire::AmqpZeroNineOne
         Types.write_shortstr(io, @destination)
         Types.write_shortstr(io, @source)
         Types.write_shortstr(io, @routing_key)
-        BitPack.write(io, [false]) # no-wait
+        BitPack.write(io, [@no_wait])
         Types.write_field_table(io, @arguments)
         io.to_slice
       end
