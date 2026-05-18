@@ -325,6 +325,31 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     confirm_ch.queue_purge(confirm_queue)
   end
 
+  default_window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
+  default_window_bodies = Array.new(confirm_n) { body }
+
+  results["confirm_window_default"] = sample_rates(samples, confirm_n) do
+    ok = confirm_ch.publish_confirm_batch(
+      default_window_messages,
+      "",
+      confirm_queue,
+      timeout: 30.seconds,
+    )
+    raise "publish_confirm_batch default timed out or saw nack" unless ok
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
+  results["confirm_window_bytes_default"] = sample_rates(samples, confirm_n) do
+    ok = confirm_ch.publish_confirm_batch(
+      default_window_bodies,
+      "",
+      confirm_queue,
+      timeout: 30.seconds,
+    )
+    raise "publish_confirm_batch bytes default timed out or saw nack" unless ok
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
   confirm_windows.each do |window_size|
     window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
     window_bodies = Array.new(confirm_n) { body }

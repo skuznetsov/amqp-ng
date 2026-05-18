@@ -102,7 +102,10 @@ publish at most `window_size` messages with `publish_batch`, call
 `wait_for_confirms`, then advance to the next window. This keeps the
 same tracker semantics as `publish_batch` and `wait_for_confirms`, but
 turns one round trip per message into one confirm barrier per window.
-It returns `false` if any window sees a nack or timeout.
+It returns `false` if any window sees a nack or timeout. The default
+window is 500 messages; callers can lower it for tighter memory or
+latency bounds, or raise it when broker/network behavior supports
+larger outstanding confirm sets.
 
 In `Recovery::None`, pending confirm entries retain only routing and
 outcome metadata. In `Recovery::Full`, pending confirm entries also

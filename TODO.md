@@ -214,6 +214,12 @@ Status: active working ledger for `amqp-ng`.
   - Progress: `tools/perf_publish.cr` now reports `confirm_batch_wait_bytes` and `confirm_window_bytes_<n>` lanes so this corridor remains measurable.
   - Evidence: live LavinMQ 2.4.0 confirm spec exits 0: 33 examples, 0 failures, 0 errors, 0 pending, including the raw-bytes `publish_confirm_batch` path.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_bytes_confirm_20260518.json` reports `confirm_batch_wait_bytes` ~30.2k msg/s vs message batch ~28.2k, and `confirm_window_bytes_500` ~15.4k vs message window ~14.2k; treat this as directional because broker RTT and scheduler noise still dominate.
+- [x] Apply the fifth higher-level LTP/WBA default-window policy move.
+  - Frame: `Window` = default `publish_confirm_batch` barrier size; `Transport` = user call without explicit tuning -> windowed publish -> broker confirm wait; `Potential` = `(default_roundtrips, outstanding_confirm_memory, timeout_risk, live_confirm_latency)`.
+  - Progress: default `publish_confirm_batch` window is now 500 instead of 100 for both `Array(Message)` and `Array(Bytes)`, while callers can still set any positive `window_size`.
+  - Progress: `tools/perf_publish.cr` now reports `confirm_window_default` and `confirm_window_bytes_default` lanes so the default remains observable.
+  - Evidence: docs and public API signatures were updated; focused API/docs/confirm specs and release no-codegen perf build pass.
+  - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_window_default_20260518.json` reports default window lanes around ~10.6-10.7k msg/s, explicit 100 lanes around ~3.4k, and explicit 500 lanes around ~10.7-15.0k; treat exact deltas as noisy, but the default is no longer pinned to the weakest 100-window corridor.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

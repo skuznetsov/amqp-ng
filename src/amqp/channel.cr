@@ -517,7 +517,7 @@ module Amqp
                               exchange : String,
                               routing_key : String,
                               *,
-                              window_size : Int32 = 100,
+                              window_size : Int32 = 500,
                               mandatory : Bool = false,
                               immediate : Bool = false,
                               timeout : Time::Span = 30.seconds) : Bool
@@ -547,7 +547,7 @@ module Amqp
                               routing_key : String,
                               *,
                               properties : Properties = Properties.new,
-                              window_size : Int32 = 100,
+                              window_size : Int32 = 500,
                               mandatory : Bool = false,
                               immediate : Bool = false,
                               timeout : Time::Span = 30.seconds) : Bool
