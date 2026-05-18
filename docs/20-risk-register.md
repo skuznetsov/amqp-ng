@@ -322,8 +322,9 @@ environments.
 **Mitigation.** Local verification currently exercises the Homebrew
 release Crystal and the user's newer dev Crystal on focused gates.
 The checked-in tree does not contain a multi-version CI workflow.
-`T-API-DEPS-001` and `T-CODEC-PURE-001` remain the intended guards for
-runtime dependency drift and stdlib ivar reach-in.
+`T-API-DEPS-001` is implemented by `spec/dependency_hygiene_spec.cr`
+and rejects runtime dependencies in `shard.yml`; `T-CODEC-PURE-001`
+rejects private stdlib ivar reach-in and wire-codec side effects.
 
 **Severity.** Medium (would block the author's own use of the
 shard).
@@ -332,8 +333,9 @@ shard).
 drift, but the repository is not yet protected by checked-in
 multi-version CI.
 
-**Status.** Partially mitigated by local verification; CI-backed
-coverage remains to be added.
+**Status.** Partially mitigated by local dual-compiler checks and
+local executable dependency/codec guards. CI-backed coverage remains
+to be added.
 
 ---
 

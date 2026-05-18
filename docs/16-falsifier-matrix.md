@@ -55,7 +55,7 @@ the source doc.
 | T-API-EXC-001..N         | Every documented failure mode raises the correct exception subclass.    | 01 §P-3                                |
 | T-API-NOGLOBAL-001       | No module `@@` state beyond `Log` instances.                            | 01 §P-4                                |
 | T-API-URI-001..010       | URI scheme/port/vhost/userinfo/query parsing matrix.                    | 01 §P-5, 04 §1, §2                     |
-| T-API-DEPS-001           | `shard.lock` runtime-scope is empty.                                    | 01 §P-8                                |
+| T-API-DEPS-001           | `shard.yml` runtime dependencies are empty; empty-dependency lockfiles lock no shards. | 01 §P-8                   |
 | T-API-CONNECT-001..010   | `Amqp.connect` keyword + URI precedence, timeout, conflict rules, block form. | 02 §2                            |
 | T-API-BLOCK-001..N       | Each row of the blocking-semantics table holds.                         | 02 §7                                  |
 | T-API-SURFACE-001        | Public-name enumeration matches the documented list, no more no less.   | 02 §8                                  |

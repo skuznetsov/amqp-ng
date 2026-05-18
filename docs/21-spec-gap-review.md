@@ -11,7 +11,7 @@ ranked repair queue for converting the matrix into executable evidence.
 
 ## Baseline
 
-- Latest no-broker full `crystal spec --error-trace` passes: 217 examples, 0 failures, 0 errors, 92 pending.
+- Latest no-broker full `crystal spec --error-trace` passes: 219 examples, 0 failures, 0 errors, 92 pending.
 - Most no-broker pending examples are live AMQP checks. With a plain broker available, the remaining default pending examples are gated live checks: TLS (`AMQP_TLS_URL`), invasive backpressure (`AMQP_BACKPRESSURE_LIVE`), and Docker broker chaos (`AMQP_CHAOS_DOCKER_CONTAINER`).
 - Latest focused LavinMQ publish/confirm smoke passes: 72 examples, 0 failures, 0 errors, 0 pending.
 - Latest focused LavinMQ no-wait/API smoke passes: 39 examples, 0 failures, 0 errors, 0 pending.

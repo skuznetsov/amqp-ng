@@ -215,8 +215,9 @@ fewer surprises. If a future feature genuinely requires a dependency,
 it MUST be motivated in `docs/20-risk-register.md` with a name,
 maintainer activity check, and a fallback plan.
 
-Falsifier: T-API-DEPS-001 — `shard.lock` MUST list only
-development-scope entries; runtime-scope MUST be empty.
+Falsifier: T-API-DEPS-001 — `shard.yml` MUST declare no runtime
+dependencies. If `shard.lock` exists while both runtime and
+development dependency sets are empty, it MUST lock no shards.
 
 ### P-9. The wire codec is pure
 
