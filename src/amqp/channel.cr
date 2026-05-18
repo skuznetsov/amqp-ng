@@ -1948,6 +1948,8 @@ module Amqp
       if @pending_method
         raise ProtocolError.new("channel #{@id}: method frame mid-content")
       end
+      return if process_direct_confirm_frame(frame.payload)
+
       body = IO::Memory.new(frame.payload, false)
       class_id = body.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
       method_id = body.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)
@@ -2037,6 +2039,33 @@ module Amqp
       else
         raise ProtocolError.new("channel #{@id}: unsolicited method (#{class_id},#{method_id})")
       end
+    end
+
+    private def process_direct_confirm_frame(payload : Bytes) : Bool
+      return false unless payload.size == 13
+      return false unless read_u16_be(payload, 0) == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
+
+      method_id = read_u16_be(payload, 2)
+      return false unless method_id == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_ACK ||
+                          method_id == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_NACK
+
+      tag = read_u64_be(payload, 4)
+      bits = payload[12]
+      settle_publish(tag, (bits & 0x01) != 0,
+        nacked: method_id == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_NACK)
+      true
+    end
+
+    private def read_u16_be(bytes : Bytes, offset : Int32) : UInt16
+      ((bytes[offset].to_u16 << 8) | bytes[offset + 1].to_u16).to_u16
+    end
+
+    private def read_u64_be(bytes : Bytes, offset : Int32) : UInt64
+      value = 0_u64
+      8.times do |i|
+        value = (value << 8) | bytes[offset + i].to_u64
+      end
+      value
     end
 
     private def process_header_frame(frame : Amqp::Wire::Frame) : Nil

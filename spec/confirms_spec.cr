@@ -37,6 +37,10 @@ class Amqp::Channel
     __settle_publish_for_test(tag, multiple, nacked)
   end
 
+  def __spec_process_method_frame(frame : Amqp::Wire::Frame) : Nil
+    process_method_frame(frame)
+  end
+
   def __spec_await_sync_publish_confirm(tag : UInt64,
                                         timeout : Time::Span,
                                         exchange : String = "",
@@ -428,6 +432,37 @@ describe "publisher confirms" do
         outcome.not_nil!.kind.nack?.should be_true
         outcome_ch.receive?.should be_nil
         ch.wait_for_confirms.should be_false
+        ch.close
+      end
+    end
+
+    it "settles exact broker ack and nack frames through the direct confirm parser" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        ack_outcome = ::Channel(Amqp::ConfirmOutcome).new(1)
+        nack_outcome = ::Channel(Amqp::ConfirmOutcome).new(1)
+        ack_tag = ch.__spec_register_pending_confirm(ack_outcome)
+        nack_tag = ch.__spec_register_pending_confirm(nack_outcome)
+
+        ack_payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.new(ack_tag, false).to_payload
+        nack_payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Nack.new(nack_tag, false, true).to_payload
+
+        ch.__spec_process_method_frame(Amqp::Wire::Frame.new(
+          Amqp::Wire::FrameType::Method, ch.id, ack_payload))
+        ch.__spec_process_method_frame(Amqp::Wire::Frame.new(
+          Amqp::Wire::FrameType::Method, ch.id, nack_payload))
+
+        ack = ack_outcome.receive?
+        nack = nack_outcome.receive?
+        ack.should_not be_nil
+        nack.should_not be_nil
+        ack.not_nil!.delivery_tag.should eq(ack_tag)
+        ack.not_nil!.kind.ack?.should be_true
+        nack.not_nil!.delivery_tag.should eq(nack_tag)
+        nack.not_nil!.kind.nack?.should be_true
+        ch.__spec_pending_confirm_count.should eq(0)
         ch.close
       end
     end

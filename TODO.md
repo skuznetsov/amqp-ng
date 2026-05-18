@@ -202,6 +202,12 @@ Status: active working ledger for `amqp-ng`.
   - Progress: single publish now uses a delayed one-entry publish method-frame cache. A new route is still direct-written first, so unique routing-key workloads do not allocate a cached frame per publish; repeated routes promote to the reusable frame corridor already used by batch publish.
   - Evidence: focused `crystal spec spec/wire/basic_methods_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace`, `crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, `crystal tool format --check src spec tools/perf_publish.cr`, and `git diff --check` exit 0.
   - Evidence: short LavinMQ 2.4.0 release probe after the cache reports `publish_single` median ~765.2k msg/s, `publish_batch_bytes` ~862.5k, `publish_multi_channel_2` ~835.1k, and `publish_multi_connection_2` ~819.3k in `.tmp/bench/current_ng_lavinmq_methodframe_cache_20260518.json`; treat this as directional because local broker load is noisy.
+- [x] Apply the third higher-level LTP/WBA orbit-compression move.
+  - Frame: `Window` = exact-size `basic.ack` / `basic.nack` broker method frames; `Transport` = confirm settlement through the channel handler; `Potential` = `(handler_parse_work, transient_io_objects, pending_confirms, live_confirm_latency)`.
+  - Progress: channel method processing now parses exact 13-byte ack/nack payloads directly from the frame slice before allocating an `IO::Memory`; non-exact payloads still fall back to the existing generic decoder.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/confirms_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including synthetic exact ack/nack method frames.
+  - Evidence: short LavinMQ release probe reports local stage medians `parse_basic_ack_frame_direct` ~613.3M ops/s vs `parse_basic_ack_frame_generic` ~13.8M ops/s in `.tmp/bench/current_ng_lavinmq_direct_ack_20260518.json`.
+  - Adversary: live confirm throughput did not show a clean global win in the same probe, so this is a CPU/handler-work reduction, not evidence that ack parsing is the dominant end-to-end bottleneck.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
