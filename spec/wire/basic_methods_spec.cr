@@ -88,4 +88,40 @@ describe Amqp::Wire::AmqpZeroNineOne::BasicMethods do
       actual.to_slice.should eq(expected.to_slice)
     end
   end
+
+  describe ".decode_deliver_frame_payload" do
+    it "decodes a basic.deliver method payload equivalent to the generic reader" do
+      payload = IO::Memory.new
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER, IO::ByteFormat::NetworkEndian)
+      Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(payload, "ctag-1")
+      payload.write_bytes(42_u64, IO::ByteFormat::NetworkEndian)
+      payload.write_byte(1_u8)
+      Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(payload, "")
+      Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(payload, "queue-a")
+      bytes = payload.to_slice
+
+      generic = BM::Deliver.read(IO::Memory.new(bytes[4, bytes.size - 4], false))
+      direct = BM.decode_deliver_frame_payload(bytes)
+
+      direct.should_not be_nil
+      direct = direct.not_nil!
+      direct.consumer_tag.should eq(generic.consumer_tag)
+      direct.delivery_tag.should eq(generic.delivery_tag)
+      direct.redelivered.should eq(generic.redelivered)
+      direct.exchange.should eq(generic.exchange)
+      direct.routing_key.should eq(generic.routing_key)
+    end
+
+    it "falls back on non-deliver or truncated deliver payloads" do
+      BM.decode_deliver_frame_payload(BM::Ack.new(1_u64, false).to_payload).should be_nil
+
+      payload = IO::Memory.new
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER, IO::ByteFormat::NetworkEndian)
+      payload.write_byte(10_u8)
+      payload.write("short".to_slice)
+      BM.decode_deliver_frame_payload(payload.to_slice).should be_nil
+    end
+  end
 end

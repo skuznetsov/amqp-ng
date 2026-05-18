@@ -2186,6 +2186,13 @@ module Amqp
         raise ProtocolError.new("channel #{@id}: method frame mid-content")
       end
       return if process_direct_confirm_frame(frame.payload)
+      if deliver = Amqp::Wire::AmqpZeroNineOne::BasicMethods.decode_deliver_frame_payload(frame.payload)
+        @pending_method = deliver
+        @pending_body = IO::Memory.new
+        @pending_body_direct = nil
+        @pending_body_received = 0_u64
+        return
+      end
 
       body = IO::Memory.new(frame.payload, false)
       class_id = body.read_bytes(UInt16, IO::ByteFormat::NetworkEndian)

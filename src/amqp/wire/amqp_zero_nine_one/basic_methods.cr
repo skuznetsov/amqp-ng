@@ -232,6 +232,30 @@ module Amqp::Wire::AmqpZeroNineOne
       end
     end
 
+    def decode_deliver_frame_payload(payload : Bytes) : Deliver?
+      return nil unless payload.size >= 16
+      return nil unless read_u16_be(payload, 0) == CLASS_ID_BASIC
+      return nil unless read_u16_be(payload, 2) == METHOD_ID_BASIC_DELIVER
+
+      offset = 4
+      tag = read_shortstr_direct(payload, offset) || return nil
+      offset += 1 + tag.bytesize
+      return nil if payload.size < offset + 9
+
+      delivery_tag = read_u64_be(payload, offset)
+      offset += 8
+      redelivered = (payload[offset] & 0x01) != 0
+      offset += 1
+
+      exchange = read_shortstr_direct(payload, offset) || return nil
+      offset += 1 + exchange.bytesize
+      routing_key = read_shortstr_direct(payload, offset) || return nil
+      offset += 1 + routing_key.bytesize
+      return nil unless offset == payload.size
+
+      Deliver.new(tag, delivery_tag, redelivered, exchange, routing_key)
+    end
+
     struct Get
       getter queue : String
       getter no_ack : Bool
@@ -379,6 +403,28 @@ module Amqp::Wire::AmqpZeroNineOne
       io.write_bytes(delivery_tag, IO::ByteFormat::NetworkEndian)
       io.write_byte(bits)
       io.write_byte(Amqp::Wire::FRAME_END)
+    end
+
+    private def read_shortstr_direct(bytes : Bytes, offset : Int32) : String?
+      return nil if offset >= bytes.size
+
+      size = bytes[offset].to_i32
+      start = offset + 1
+      return nil if bytes.size < start + size
+
+      String.new(bytes[start, size])
+    end
+
+    private def read_u16_be(bytes : Bytes, offset : Int32) : UInt16
+      ((bytes[offset].to_u16 << 8) | bytes[offset + 1].to_u16).to_u16
+    end
+
+    private def read_u64_be(bytes : Bytes, offset : Int32) : UInt64
+      value = 0_u64
+      8.times do |i|
+        value = (value << 8) | bytes[offset + i].to_u64
+      end
+      value
     end
 
     struct Recover

@@ -264,6 +264,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full default `crystal spec --error-trace` exits 0: 192 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_direct_ack_write_20260518.json` reports `consume_ack_preloaded` median ~269.1k msg/s over noisy samples; treat as allocation/write-path reduction plus behavioral proof, not a clean throughput win.
+- [x] Apply the twelfth higher-level LTP/WBA direct deliver parser move.
+  - Frame: `Window` = incoming `basic.deliver` method payloads; `Transport` = broker method frame -> channel handler -> pending content assembly; `Potential` = `(handler_io_memory_allocations, shortstr_temp_copies, method_parse_cpu, consume_latency)`.
+  - Progress: `BasicMethods.decode_deliver_frame_payload` parses well-formed full `basic.deliver` payloads directly and falls back to the existing generic decoder for non-deliver or malformed payloads. The benchmark harness now reports generic/direct `basic.deliver` parse stages.
+  - Evidence: `crystal spec spec/wire/basic_methods_spec.cr spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 39 examples, 0 failures, 0 errors, 24 pending.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 194 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_direct_deliver_parse_20260518.json` reports `parse_basic_deliver_direct` ~11.9M ops/s vs generic ~9.0M ops/s, `consume_no_ack_preloaded` median ~400.1k msg/s, and `consume_ack_preloaded` median ~369.1k msg/s; treat consume deltas as noisy and parser delta as modest because string creation still dominates.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

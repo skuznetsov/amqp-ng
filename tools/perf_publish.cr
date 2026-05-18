@@ -177,6 +177,34 @@ def decode_empty_header_direct(payload : Bytes) : UInt64
   decoded.body_size
 end
 
+def build_deliver_payload(consumer_tag : String,
+                          delivery_tag : UInt64,
+                          redelivered : Bool,
+                          exchange : String,
+                          routing_key : String) : Bytes
+  io = IO::Memory.new
+  io.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+  io.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER, IO::ByteFormat::NetworkEndian)
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, consumer_tag)
+  io.write_bytes(delivery_tag, IO::ByteFormat::NetworkEndian)
+  io.write_byte(redelivered ? 1_u8 : 0_u8)
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, exchange)
+  Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, routing_key)
+  io.to_slice
+end
+
+def parse_basic_deliver_generic(payload : Bytes) : UInt64
+  io = IO::Memory.new(payload[4, payload.size - 4], false)
+  deliver = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver.read(io)
+  deliver.delivery_tag &+ deliver.routing_key.bytesize.to_u64
+end
+
+def parse_basic_deliver_direct(payload : Bytes) : UInt64
+  deliver = Amqp::Wire::AmqpZeroNineOne::BasicMethods.decode_deliver_frame_payload(payload) ||
+            raise "expected direct deliver decode"
+  deliver.delivery_tag &+ deliver.routing_key.bytesize.to_u64
+end
+
 body = Bytes.new(body_bytes, 120_u8)
 single_message = Amqp::Message.new(body)
 full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
@@ -257,6 +285,36 @@ stages["decode_empty_header_direct"] = sample_rates("decode_empty_header_direct"
     sum &+= body_size
   end
   raise "bad empty header decode checksum" unless sum == expected
+end
+
+deliver_payloads = Array.new(256) do |i|
+  build_deliver_payload("ctag-#{i}", i.to_u64 + 1_u64, i.odd?, "", "bench-q-#{i}")
+end
+{parse_basic_deliver_generic(deliver_payloads[42]),
+ parse_basic_deliver_direct(deliver_payloads[42])}.each do |value|
+  raise "bad deliver parse" unless value == 43_u64 + "bench-q-42".bytesize
+end
+
+stages["parse_basic_deliver_generic"] = sample_rates("parse_basic_deliver_generic", samples, stage_n) do
+  sum = 0_u64
+  expected = 0_u64
+  stage_n.times do |i|
+    index = i & 255
+    expected &+= index.to_u64 + 1_u64 + "bench-q-#{index}".bytesize.to_u64
+    sum &+= parse_basic_deliver_generic(deliver_payloads[index])
+  end
+  raise "bad deliver parse checksum" unless sum == expected
+end
+
+stages["parse_basic_deliver_direct"] = sample_rates("parse_basic_deliver_direct", samples, stage_n) do
+  sum = 0_u64
+  expected = 0_u64
+  stage_n.times do |i|
+    index = i & 255
+    expected &+= index.to_u64 + 1_u64 + "bench-q-#{index}".bytesize.to_u64
+    sum &+= parse_basic_deliver_direct(deliver_payloads[index])
+  end
+  raise "bad deliver parse checksum" unless sum == expected
 end
 
 Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
