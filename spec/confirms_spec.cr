@@ -155,6 +155,32 @@ describe "publisher confirms" do
       end
     end
 
+    it "publish_confirm_batch preserves mixed message properties" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+
+        messages = [
+          Amqp::Message.new("mixed-empty"),
+          Amqp::Message.new("mixed-props", Amqp::Properties.new(content_type: "text/plain")),
+          Amqp::Message.new("mixed-empty-2"),
+        ]
+        ch.publish_confirm_batch(messages, "", info.name, window_size: 3, timeout: 5.seconds).should be_true
+
+        received = {} of String => Amqp::Properties
+        3.times do
+          msg = ch.get(info.name, auto_ack: true).not_nil!
+          received[String.new(msg.body)] = msg.properties
+        end
+        received["mixed-empty"].empty?.should be_true
+        received["mixed-props"].content_type.should eq("text/plain")
+        received["mixed-empty-2"].empty?.should be_true
+        ch.close
+      end
+    end
+
     it "publish_confirm_batch confirms raw byte bodies without pre-wrapping messages" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url, recovery: false) do |conn|

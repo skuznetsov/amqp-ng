@@ -374,6 +374,15 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: sequential live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 200 examples, 0 failures, 0 errors, 4 pending. A parallel full-spec attempt hit a Crystal temp executable race, so the verified signal is the sequential rerun.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src/amqp/channel.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_empty_props_const_20260518.json` reports `consume_no_ack_preloaded` median ~415.6k msg/s and `consume_ack_preloaded` ~366.6k; treat this as behavior-preserving emission cleanup, not an end-to-end throughput win.
+- [x] Apply the twenty-fourth higher-level LTP/WBA confirm-batch empty-properties branch move.
+  - Frame: `Window` = confirm-mode `publish_batch` / `publish_confirm_batch` for `Array(Message)` where most batches carry empty properties; `Transport` = pending confirm registration -> batch frame write under the connection write mutex; `Potential` = `(per_message_property_branch_work_under_write_lock, mixed_property_correctness, confirm_batch_latency)`.
+  - Progress: confirm batch message paths now pre-detect all-empty properties once per batch/window and use the empty-header writer directly for that branch, matching the existing unconfirmed batch shape. Mixed-property batches keep the per-message encoder path.
+  - Adversary guard: added a live `publish_confirm_batch` mixed empty/non-empty property spec so the batch-level branch cannot drop message properties.
+  - Evidence: focused default `/opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 60 examples, 0 failures, 0 errors, 58 pending.
+  - Evidence: live LavinMQ 2.4.0 focused `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 60 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 201 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_batch_empty_branch_20260518.json` shows confirm-batch samples with large broker/scheduler outliers; treat this as write-lock branch reduction, not an end-to-end throughput claim.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

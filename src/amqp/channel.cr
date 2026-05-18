@@ -1783,6 +1783,17 @@ module Amqp
       true
     end
 
+    private def all_properties_empty?(messages : Array(Message),
+                                      start : Int32,
+                                      stop : Int32) : Bool
+      index = start
+      while index < stop
+        return false unless messages[index].properties.empty?
+        index += 1
+      end
+      true
+    end
+
     private def publish_batch_unconfirmed(bodies : Array(Bytes),
                                           exchange : String,
                                           routing_key : String,
@@ -1826,6 +1837,7 @@ module Amqp
       max_body = max_body_per_frame(@connection.frame_max)
       lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
       method_frame = publish_method_frame(exchange, routing_key, mandatory, immediate)
+      empty_properties = all_properties_empty?(messages)
       @confirms_mutex.lock if lock_during_write
       begin
         @connection.with_write do |io|
@@ -1841,17 +1853,23 @@ module Amqp
             end
           end
 
-          messages.each do |message|
-            header_payload = unless message.properties.empty?
-              Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
-                Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
-                message.body.size.to_u64,
-                message.properties,
-              )
+          if empty_properties
+            messages.each do |message|
+              write_publish_frames_to(io, method_frame, nil, message.body, max_body)
             end
+          else
+            messages.each do |message|
+              header_payload = unless message.properties.empty?
+                Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+                  Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+                  message.body.size.to_u64,
+                  message.properties,
+                )
+              end
 
-            write_publish_frames_to(io, method_frame,
-              header_payload, message.body, max_body)
+              write_publish_frames_to(io, method_frame,
+                header_payload, message.body, max_body)
+            end
           end
         end
       rescue ex
@@ -1951,6 +1969,7 @@ module Amqp
       lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
       method_frame = publish_method_frame(exchange, routing_key, mandatory, immediate)
       stop = start + count
+      empty_properties = all_properties_empty?(messages, start, stop)
 
       @confirms_mutex.lock if lock_during_write
       begin
@@ -1973,20 +1992,29 @@ module Amqp
             end
           end
 
-          index = start
-          while index < stop
-            message = messages[index]
-            header_payload = unless message.properties.empty?
-              Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
-                Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
-                message.body.size.to_u64,
-                message.properties,
-              )
+          if empty_properties
+            index = start
+            while index < stop
+              message = messages[index]
+              write_publish_frames_to(io, method_frame, nil, message.body, max_body)
+              index += 1
             end
+          else
+            index = start
+            while index < stop
+              message = messages[index]
+              header_payload = unless message.properties.empty?
+                Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+                  Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+                  message.body.size.to_u64,
+                  message.properties,
+                )
+              end
 
-            write_publish_frames_to(io, method_frame,
-              header_payload, message.body, max_body)
-            index += 1
+              write_publish_frames_to(io, method_frame,
+                header_payload, message.body, max_body)
+              index += 1
+            end
           end
         end
       rescue ex
