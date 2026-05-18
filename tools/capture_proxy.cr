@@ -19,9 +19,9 @@ require "socket"
 require "file_utils"
 
 scenario = ARGV[0]? || abort "usage: capture_proxy <scenario> [port] [upstream-host] [upstream-port]"
-listen_port    = (ARGV[1]? || "5673").to_i
-upstream_host  = ARGV[2]? || "127.0.0.1"
-upstream_port  = (ARGV[3]? || "5672").to_i
+listen_port = (ARGV[1]? || "5673").to_i
+upstream_host = ARGV[2]? || "127.0.0.1"
+upstream_port = (ARGV[3]? || "5672").to_i
 
 root = File.expand_path("../spec/fixtures/frames/#{scenario}", __DIR__)
 FileUtils.mkdir_p(root)
@@ -38,7 +38,7 @@ STDERR.puts "[capture] scenario=#{scenario} listening 127.0.0.1:#{listen_port} -
 STDOUT.puts "READY"
 STDOUT.flush
 
-t0 = Time.monotonic
+t0 = Time.instant
 client = server.accept
 server.close # only one connection per scenario
 upstream = TCPSocket.new(upstream_host, upstream_port)
@@ -92,7 +92,7 @@ when done.receive
 when timeout(200.milliseconds)
 end
 
-t1 = Time.monotonic
+t1 = Time.instant
 client.close rescue nil
 upstream.close rescue nil
 c2s_file.close

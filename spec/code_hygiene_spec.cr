@@ -55,6 +55,15 @@ describe "source hygiene" do
     offenders.should be_empty, offenders.join('\n')
   end
 
+  it "does not use stdlib APIs with known active deprecation warnings" do
+    offenders = CodeHygieneSpec.matching_lines(
+      CodeHygieneSpec.crystal_files_under("src", "spec", "tools"),
+      "Time" + ".monotonic"
+    )
+
+    offenders.should be_empty, offenders.join('\n')
+  end
+
   it "keeps the wire codec free of fibers, sockets, TLS, and module state" do
     wire_files = CodeHygieneSpec.crystal_files_under("src/amqp/wire")
     forbidden = {
