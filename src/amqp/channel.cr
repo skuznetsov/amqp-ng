@@ -533,10 +533,10 @@ module Amqp
                       properties : Properties = Properties.new,
                       mandatory : Bool = false,
                       immediate : Bool = false) : Array(UInt64?)
-      return publish_batch_unconfirmed(bodies, exchange, routing_key, properties, mandatory, immediate) unless @confirms_enabled
-
       ensure_open!
       wait_for_flow_active
+      return publish_batch_unconfirmed(bodies, exchange, routing_key, properties, mandatory, immediate) unless @confirms_enabled
+
       enter_operation
       begin
         publish_batch_registered(bodies, exchange, routing_key, properties, mandatory, immediate)

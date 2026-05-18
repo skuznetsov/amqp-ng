@@ -379,6 +379,53 @@ describe Amqp::Channel do
       end
     end
 
+    it "blocks raw-byte batch publishes while channel.flow is inactive" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        q = ch.queue
+        done = ::Channel(Exception?).new(1)
+
+        ch.__spec_set_flow_active(false)
+        spawn do
+          begin
+            ch.publish_batch(["flow-batch".to_slice], "", q.name)
+            done.send(nil)
+          rescue ex
+            done.send(ex)
+          end
+        end
+
+        select
+        when result = done.receive
+          raise result if result
+          fail "raw-byte batch publish completed while channel.flow was inactive"
+        when timeout(50.milliseconds)
+        end
+
+        ch.__spec_set_flow_active(true)
+        if ex = done.receive
+          raise ex
+        end
+        String.new(q.get.not_nil!.body).should eq("flow-batch")
+        q.delete
+        ch.close
+      end
+    end
+
+    it "rejects raw-byte batch publishes after channel close" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        q = ch.queue
+        ch.close
+
+        expect_raises(Amqp::ChannelClosedByCaller) do
+          ch.publish_batch(["closed-batch".to_slice], "", q.name)
+        end
+      end
+    end
+
     it "supports tx.commit and tx.rollback" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

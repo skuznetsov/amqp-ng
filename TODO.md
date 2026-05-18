@@ -383,6 +383,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 201 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_batch_empty_branch_20260518.json` shows confirm-batch samples with large broker/scheduler outliers; treat this as write-lock branch reduction, not an end-to-end throughput claim.
+- [x] Fix raw-byte `publish_batch` open/flow gating in non-confirm mode.
+  - Problem: `publish_batch(Array(Bytes))` returned through the non-confirm fast path before `ensure_open!` and `wait_for_flow_active`, unlike single publish and `Array(Message)` batch publish.
+  - Progress: moved open/flow gating before the non-confirm fast path so raw-byte batch publishes respect channel close and `channel.flow` state consistently.
+  - Evidence: focused default `/opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 23 pending.
+  - Evidence: live LavinMQ 2.4.0 focused `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including raw-byte batch flow/closed-channel guards.
+  - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 203 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
