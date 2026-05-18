@@ -634,9 +634,11 @@ struct Amqp::Message
 end
 ```
 
-- The `String` overload calls `.to_slice` (the bytes are UTF-8 if the
-  string is UTF-8; the shard does not enforce a charset). The `IO`
-  overload reads to EOF eagerly — streaming bodies are not v0 scope.
+- The `Bytes` overload is zero-copy: callers that pass a mutable slice
+  own its lifetime and mutation discipline. The `String` overload copies
+  into owned bytes (UTF-8 if the string is UTF-8; the shard does not
+  enforce a charset). The `IO` overload reads to EOF eagerly into owned
+  bytes — streaming bodies are not v0 scope.
 - `Properties` defaults are documented in §6.3.
 
 ### 6.2 `Amqp::DeliverMessage` and `Amqp::GetMessage`

@@ -9,11 +9,11 @@ module Amqp
     end
 
     def self.new(body : String, properties : Properties = Properties.new) : Message
-      new(body.to_slice, properties)
+      new(body.to_slice.dup, properties)
     end
 
     def self.new(io : IO, properties : Properties = Properties.new) : Message
-      new(io.gets_to_end.to_slice, properties)
+      new(io.gets_to_end, properties)
     end
   end
 
