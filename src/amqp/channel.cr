@@ -18,7 +18,9 @@ require "./wire/amqp_zero_nine_one/content_header"
 
 module Amqp
   class Channel
-    Log = ::Log.for("amqp.channel")
+    Log              = ::Log.for("amqp.channel")
+    EMPTY_PROPERTIES = Properties.new
+
     alias CancelCallback = String -> Nil
     alias CloseCallback = UInt16, String -> Nil
     alias ConfirmCallback = Bool -> Nil
@@ -2663,7 +2665,7 @@ module Amqp
 
     private def emit_pending_delivery : Nil
       method = @pending_method
-      props = @pending_props || Properties.new
+      props = @pending_props || EMPTY_PROPERTIES
       body_direct = @pending_body_direct
       body_bytes = body_direct || @pending_body.to_slice
       @pending_method = nil
