@@ -2731,15 +2731,19 @@ module Amqp
         end
         settled.callback.try { |callback| enqueue_confirm_callback(callback, outcome.kind.ack?) }
       elsif settled_entries = multiple_settled
+        ack_count = 0_i64
+        nack_count = 0_i64
         settled_entries.each do |settled|
           outcome = settled.outcome
           if outcome.kind.nack?
-            @connection.stats.incr_confirmed_nack
+            nack_count += 1
           else
-            @connection.stats.incr_confirmed_ack
+            ack_count += 1
           end
           settled.callback.try { |callback| enqueue_confirm_callback(callback, outcome.kind.ack?) }
         end
+        @connection.stats.incr_confirmed_ack(ack_count) if ack_count > 0
+        @connection.stats.incr_confirmed_nack(nack_count) if nack_count > 0
       end
     end
 

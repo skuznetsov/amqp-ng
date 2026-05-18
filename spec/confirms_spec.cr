@@ -219,6 +219,7 @@ describe "publisher confirms" do
         ch.__spec_lowest_unconfirmed_tag.should eq(tag2)
         ch.__spec_settle_publish(tag3, multiple: true, nacked: false)
         ch.__spec_lowest_unconfirmed_tag.should be_nil
+        conn.stats.snapshot.confirmed_ack.should eq(3_i64)
         ch.wait_for_confirms.should be_true
         ch.close
       end
@@ -509,6 +510,7 @@ describe "publisher confirms" do
           outcome.not_nil!.kind.nack?.should be_true
           outcome_ch.receive?.should be_nil
         end
+        conn.stats.snapshot.confirmed_nack.should eq(3_i64)
         ch.wait_for_confirms.should be_false
         ch.close
       end

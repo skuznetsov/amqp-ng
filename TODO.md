@@ -327,6 +327,14 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/recovery_spec.cr spec/stats_spec.cr --error-trace` exits 0: 43 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: live LavinMQ focused routing spec `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/subscription_spec.cr spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 31 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_consumer_cache_20260518.json` reports `consume_no_ack_preloaded` median ~392.0k msg/s and `consume_ack_preloaded` median ~463.8k msg/s. Treat this as a directional consumer hot-path signal; no-ack samples remain noisy.
+- [x] Apply the nineteenth higher-level LTP/WBA confirm-stats batching move.
+  - Frame: `Window` = broker `multiple=true` confirm settlement; `Transport` = confirm tag range -> settled publishes -> stats counters/callbacks; `Potential` = `(atomic_counter_ops_per_settlement, exact_counter_values, callback_ordering, confirm_latency)`.
+  - Progress: `settle_publish` now counts ack/nack totals locally for `multiple=true` settlements and increments `confirmed_ack` / `confirmed_nack` stats once per non-zero total. Per-publish callback dispatch and outcome channels remain unchanged.
+  - Refuted branch: switching all stats counters to relaxed atomic ordering is not taken; the Crystal 1.20.1 eval probe hit a compiler/runtime bug, so memory ordering changes need a separate compiler-safe falsifier before use.
+  - Evidence: focused `/opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 35 pending.
+  - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 198 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_stats_batch_20260518.json` reports healthy confirm lanes, including `confirm_batch_wait` median ~28.9k msg/s and `confirm_window_500` median ~13.9k msg/s. Treat this as atomic stats work reduction under multiple confirms, not a clean throughput guarantee.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
