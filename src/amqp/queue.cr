@@ -11,12 +11,14 @@ module Amqp
     def initialize(@channel : Channel, @name : String)
     end
 
-    def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments = Arguments.new) : self
+    def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments | NamedTuple = Arguments.new) : self
+      arguments = Amqp.coerce_arguments(arguments)
       @channel.queue_bind(@name, exchange, routing_key, arguments)
       self
     end
 
-    def unbind(exchange : String, routing_key : String = "", args arguments : Arguments = Arguments.new) : self
+    def unbind(exchange : String, routing_key : String = "", args arguments : Arguments | NamedTuple = Arguments.new) : self
+      arguments = Amqp.coerce_arguments(arguments)
       @channel.queue_unbind(@name, exchange, routing_key, arguments)
       self
     end
@@ -108,9 +110,10 @@ module Amqp
                   no_ack : Bool = true,
                   exclusive : Bool = false,
                   block : Bool = false,
-                  args arguments : Arguments = Arguments.new,
+                  args arguments : Arguments | NamedTuple = Arguments.new,
                   work_pool : Int32 = 1,
                   &callback : DeliverMessage -> Nil) : String
+      arguments = Amqp.coerce_arguments(arguments)
       @channel.basic_consume(@name, tag, no_ack, exclusive, block, arguments, work_pool) do |delivery|
         callback.call(delivery)
       end

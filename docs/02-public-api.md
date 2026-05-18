@@ -561,7 +561,11 @@ end
 - The `auto-generated queue name` case (passing `""` to
   `queue_declare`) MUST be supported. The returned `QueueDeclareOk`
   exposes the server-assigned name.
-- `arguments` is `Amqp::Arguments` (§6) — a typed field-table wrapper.
+- `arguments` is canonically `Amqp::Arguments` (§6). Topology and
+  consumer helper APIs also accept NamedTuple `args` / `arguments`
+  sugar and coerce it into `Amqp::Arguments`; use explicit
+  `Amqp::Arguments` when field widths must be visually obvious at the
+  call site.
   Plain `Hash(String, X)` is NOT accepted; this is intentional to
   force the caller to consider the AMQP field-type their value maps
   to.

@@ -309,7 +309,8 @@ module Amqp
                          durable : Bool = false,
                          auto_delete : Bool = false,
                          internal : Bool = false,
-                         arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+                         arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Declare.new(
           name, type, passive, durable, auto_delete, internal, arguments,
@@ -338,7 +339,8 @@ module Amqp
     def exchange_bind(destination : String,
                       source : String,
                       routing_key : String = "",
-                      arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Bind.new(
           destination, source, routing_key, arguments,
@@ -351,7 +353,8 @@ module Amqp
     def exchange_unbind(destination : String,
                         source : String,
                         routing_key : String = "",
-                        arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+                        arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::ExchangeMethods::Unbind.new(
           destination, source, routing_key, arguments,
@@ -366,7 +369,8 @@ module Amqp
                       durable : Bool = false,
                       exclusive : Bool = false,
                       auto_delete : Bool = false,
-                      arguments : Amqp::Arguments = Amqp::Arguments.new) : QueueInfo
+                      arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : QueueInfo
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::QueueMethods::Declare.new(
           name, passive, durable, exclusive, auto_delete, arguments,
@@ -410,7 +414,8 @@ module Amqp
     def queue_bind(queue : String,
                    exchange : String,
                    routing_key : String = "",
-                   arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+                   arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::QueueMethods::Bind.new(
           queue, exchange, routing_key, arguments,
@@ -426,7 +431,8 @@ module Amqp
     def queue_unbind(queue : String,
                      exchange : String,
                      routing_key : String = "",
-                     arguments : Amqp::Arguments = Amqp::Arguments.new) : Nil
+                     arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       env = sync_rpc(
         Amqp::Wire::AmqpZeroNineOne::QueueMethods::Unbind.new(
           queue, exchange, routing_key, arguments,
@@ -979,9 +985,10 @@ module Amqp
                       no_ack : Bool = true,
                       exclusive : Bool = false,
                       block : Bool = false,
-                      args arguments : Arguments = Arguments.new,
+                      args arguments : Arguments | NamedTuple = Arguments.new,
                       work_pool : Int32 = 1,
                       &callback : DeliverMessage -> Nil) : String
+      arguments = Amqp.coerce_arguments(arguments)
       raise ArgumentError.new("Max allowed work_pool is 1024") if work_pool > 1024
       raise ArgumentError.new("At least one worker required") if work_pool < 1
 
@@ -1087,7 +1094,8 @@ module Amqp
               durable : Bool = true,
               exclusive : Bool = false,
               auto_delete : Bool = false,
-              args arguments : Arguments = Arguments.new) : Queue
+              args arguments : Arguments | NamedTuple = Arguments.new) : Queue
+      arguments = Amqp.coerce_arguments(arguments)
       info = queue_declare(name, passive, durable, exclusive, auto_delete, arguments)
       Queue.new(self, info.name)
     end
@@ -1098,7 +1106,8 @@ module Amqp
                  durable : Bool = true,
                  internal : Bool = false,
                  auto_delete : Bool = false,
-                 args arguments : Arguments = Arguments.new) : Exchange
+                 args arguments : Arguments | NamedTuple = Arguments.new) : Exchange
+      arguments = Amqp.coerce_arguments(arguments)
       exchange_declare(name, type, passive, durable,
         auto_delete: auto_delete, internal: internal, arguments: arguments)
       Exchange.new(self, name)
@@ -1135,8 +1144,9 @@ module Amqp
                 no_local : Bool = false,
                 no_ack : Bool = false,
                 exclusive : Bool = false,
-                arguments : Amqp::Arguments = Amqp::Arguments.new,
+                arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
                 buffer : Int32 = 1024) : Subscription
+      arguments = Amqp.coerce_arguments(arguments)
       # Pre-generate a client-side tag if caller didn't supply one. This
       # lets us register the Subscription BEFORE the broker can send any
       # basic.deliver — otherwise a fast broker (or anything that races
@@ -1181,8 +1191,9 @@ module Amqp
                   auto_ack : Bool = false,
                   exclusive : Bool = false,
                   no_local : Bool = false,
-                  arguments : Amqp::Arguments = Amqp::Arguments.new,
+                  arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
                   buffer : Int32 = 16) : Subscription
+      arguments = Amqp.coerce_arguments(arguments)
       consume(queue, consumer_tag: consumer_tag, no_local: no_local,
         no_ack: auto_ack, exclusive: exclusive, arguments: arguments, buffer: buffer)
     end
@@ -1193,8 +1204,9 @@ module Amqp
                 auto_ack : Bool = false,
                 exclusive : Bool = false,
                 no_local : Bool = false,
-                arguments : Amqp::Arguments = Amqp::Arguments.new,
+                arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
                 & : DeliverMessage -> _) : Nil
+      arguments = Amqp.coerce_arguments(arguments)
       sub = subscribe(queue, consumer_tag: consumer_tag, auto_ack: auto_ack,
         exclusive: exclusive, no_local: no_local, arguments: arguments)
       loop do

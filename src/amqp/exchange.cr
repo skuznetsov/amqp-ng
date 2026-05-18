@@ -11,12 +11,14 @@ module Amqp
     def initialize(@channel : Channel, @name : String)
     end
 
-    def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments = Arguments.new) : self
+    def bind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments | NamedTuple = Arguments.new) : self
+      arguments = Amqp.coerce_arguments(arguments)
       @channel.exchange_bind(@name, exchange, routing_key, arguments)
       self
     end
 
-    def unbind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments = Arguments.new) : self
+    def unbind(exchange : String, routing_key : String = "", no_wait : Bool = false, args arguments : Arguments | NamedTuple = Arguments.new) : self
+      arguments = Amqp.coerce_arguments(arguments)
       @channel.exchange_unbind(@name, exchange, routing_key, arguments)
       self
     end

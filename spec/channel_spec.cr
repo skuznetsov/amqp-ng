@@ -602,5 +602,19 @@ describe Amqp::Channel do
         end
       end
     end
+
+    it "accepts NamedTuple arguments for topology helpers" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        conn.with_channel do |ch|
+          ex = "amqp-ng-nt-ex-#{Random::Secure.hex(4)}"
+          q = ch.queue_declare(exclusive: true, arguments: {marker: "namedtuple"})
+          ch.exchange_declare(ex, "direct", auto_delete: true, arguments: {marker: "namedtuple"})
+          ch.queue_bind(q.name, ex, "rk", {marker: "namedtuple"})
+          ch.queue_unbind(q.name, ex, "rk", {marker: "namedtuple"})
+          ch.exchange_delete(ex)
+        end
+      end
+    end
   end
 end
