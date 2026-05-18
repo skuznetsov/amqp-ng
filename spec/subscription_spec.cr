@@ -109,6 +109,28 @@ describe Amqp::Subscription do
       end
     end
 
+    it "routes deliveries to multiple consumers on one channel" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        left = ch.queue_declare(exclusive: true)
+        right = ch.queue_declare(exclusive: true)
+        left_sub = ch.subscribe(left.name, consumer_tag: "left-#{Random::Secure.hex(4)}", auto_ack: true)
+        right_sub = ch.subscribe(right.name, consumer_tag: "right-#{Random::Secure.hex(4)}", auto_ack: true)
+
+        3.times do |i|
+          ch.publish("", left.name, "left-#{i}".to_slice)
+          ch.publish("", right.name, "right-#{i}".to_slice)
+        end
+
+        3.times do |i|
+          String.new(left_sub.receive.body).should eq("left-#{i}")
+          String.new(right_sub.receive.body).should eq("right-#{i}")
+        end
+        ch.close
+      end
+    end
+
     it "a full subscription mailbox does not block unrelated channels on the connection" do
       pending! "set AMQP_BACKPRESSURE_LIVE=1 to run this live broker measurement" unless ENV["AMQP_BACKPRESSURE_LIVE"]?
       pending! "broker not reachable" unless SpecHelper.broker_reachable?

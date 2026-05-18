@@ -117,6 +117,10 @@ module Amqp
     @get_slot : ::Channel(GetMessage | Nil | Exception)?
     @consumers : Hash(String, Subscription)
     @consumers_mutex : Mutex
+    @consumers_generation : Atomic(Int64)
+    @cached_consumer_tag : String?
+    @cached_consumer : Subscription?
+    @cached_consumer_generation : Int64
     @pending_method : (Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver |
                        Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return |
                        Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk |
@@ -180,6 +184,10 @@ module Amqp
       @get_slot = nil
       @consumers = {} of String => Subscription
       @consumers_mutex = Mutex.new
+      @consumers_generation = Atomic(Int64).new(0_i64)
+      @cached_consumer_tag = nil
+      @cached_consumer = nil
+      @cached_consumer_generation = -1_i64
       @pending_method = nil
       @pending_props = nil
       @pending_body_size = 0_u64
@@ -1125,7 +1133,7 @@ module Amqp
       # the handler fiber) could route a delivery against an unknown tag.
       tag = consumer_tag.empty? ? "amqp-ng-ctag-#{Random::Secure.hex(8)}" : consumer_tag
       sub = Subscription.new(self, tag, queue, buffer)
-      @consumers_mutex.synchronize { @consumers[tag] = sub }
+      register_consumer(tag, sub)
 
       begin
         env = sync_rpc(
@@ -1134,7 +1142,7 @@ module Amqp
           ).to_payload
         )
       rescue ex
-        @consumers_mutex.synchronize { @consumers.delete(tag) }
+        delete_consumer(tag)
         sub.mark_closed
         raise ex
       end
@@ -1144,7 +1152,7 @@ module Amqp
           Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CONSUME_OK)
         Amqp::Wire::AmqpZeroNineOne::BasicMethods::ConsumeOk.read(env.body)
       rescue ex
-        @consumers_mutex.synchronize { @consumers.delete(tag) }
+        delete_consumer(tag)
         sub.mark_closed
         raise ex
       end
@@ -1222,7 +1230,7 @@ module Amqp
       )
       expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
         Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CANCEL_OK)
-      sub = @consumers_mutex.synchronize { @consumers.delete(consumer_tag) }
+      sub = delete_consumer(consumer_tag)
       @topology_mutex.synchronize { @topology_consumers.delete(consumer_tag) }
       sub.try &.mark_closed
     end
@@ -2447,7 +2455,7 @@ module Amqp
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_CANCEL
           cancel = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Cancel.read(body)
-          sub = @consumers_mutex.synchronize { @consumers.delete(cancel.consumer_tag) }
+          sub = delete_consumer(cancel.consumer_tag)
           @topology_mutex.synchronize { @topology_consumers.delete(cancel.consumer_tag) }
           sub.try &.mark_closed
           unless cancel.no_wait
@@ -2481,6 +2489,37 @@ module Amqp
       @pending_body.clear
       @pending_body_direct = nil
       @pending_body_received = 0_u64
+    end
+
+    private def register_consumer(tag : String, sub : Subscription) : Nil
+      @consumers_mutex.synchronize do
+        @consumers[tag] = sub
+        @consumers_generation.add(1_i64)
+      end
+    end
+
+    private def delete_consumer(tag : String) : Subscription?
+      @consumers_mutex.synchronize do
+        sub = @consumers.delete(tag)
+        @consumers_generation.add(1_i64) if sub
+        sub
+      end
+    end
+
+    private def consumer_for(tag : String) : Subscription?
+      generation = @consumers_generation.get
+      if @cached_consumer_generation == generation &&
+         @cached_consumer_tag == tag
+        return @cached_consumer
+      end
+
+      @consumers_mutex.synchronize do
+        sub = @consumers[tag]?
+        @cached_consumer_tag = tag
+        @cached_consumer = sub
+        @cached_consumer_generation = @consumers_generation.get
+        sub
+      end
     end
 
     private def process_direct_confirm_frame(payload : Bytes) : Bool
@@ -2570,7 +2609,7 @@ module Amqp
           body: body_bytes,
           channel: self,
         )
-        sub = @consumers_mutex.synchronize { @consumers[method.consumer_tag]? }
+        sub = consumer_for(method.consumer_tag)
         sub.try &.deliver(delivery)
         @connection.stats.incr_consumed
       in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return
