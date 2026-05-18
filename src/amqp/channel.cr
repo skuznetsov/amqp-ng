@@ -121,6 +121,9 @@ module Amqp
     @cached_consumer_tag : String?
     @cached_consumer : Subscription?
     @cached_consumer_generation : Int64
+    @cached_deliver_consumer_tag : String?
+    @cached_deliver_exchange : String?
+    @cached_deliver_routing_key : String?
     @pending_method : (Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver |
                        Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return |
                        Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk |
@@ -188,6 +191,9 @@ module Amqp
       @cached_consumer_tag = nil
       @cached_consumer = nil
       @cached_consumer_generation = -1_i64
+      @cached_deliver_consumer_tag = nil
+      @cached_deliver_exchange = nil
+      @cached_deliver_routing_key = nil
       @pending_method = nil
       @pending_props = nil
       @pending_body_size = 0_u64
@@ -2394,7 +2400,7 @@ module Amqp
         raise ProtocolError.new("channel #{@id}: method frame mid-content")
       end
       return if process_direct_confirm_frame(frame.payload)
-      if deliver = Amqp::Wire::AmqpZeroNineOne::BasicMethods.decode_deliver_frame_payload(frame.payload)
+      if deliver = decode_deliver_frame_payload_cached(frame.payload)
         @pending_method = deliver
         reset_pending_body_state
         return
@@ -2547,6 +2553,71 @@ module Amqp
         value = (value << 8) | bytes[offset + i].to_u64
       end
       value
+    end
+
+    private def decode_deliver_frame_payload_cached(payload : Bytes) : Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver?
+      return nil unless payload.size >= 16
+      return nil unless read_u16_be(payload, 0) == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
+      return nil unless read_u16_be(payload, 2) == Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER
+
+      offset = 4
+      tag_and_offset = read_shortstr_cached(payload, offset, @cached_deliver_consumer_tag) || return nil
+      consumer_tag = tag_and_offset[0]
+      offset = tag_and_offset[1]
+      return nil if payload.size < offset + 9
+
+      delivery_tag = read_u64_be(payload, offset)
+      offset += 8
+      redelivered = (payload[offset] & 0x01) != 0
+      offset += 1
+
+      exchange_and_offset = read_shortstr_cached(payload, offset, @cached_deliver_exchange) || return nil
+      exchange = exchange_and_offset[0]
+      offset = exchange_and_offset[1]
+      routing_key_and_offset = read_shortstr_cached(payload, offset, @cached_deliver_routing_key) || return nil
+      routing_key = routing_key_and_offset[0]
+      offset = routing_key_and_offset[1]
+      return nil unless offset == payload.size
+
+      @cached_deliver_consumer_tag = consumer_tag
+      @cached_deliver_exchange = exchange
+      @cached_deliver_routing_key = routing_key
+
+      Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver.new(
+        consumer_tag, delivery_tag, redelivered, exchange, routing_key,
+      )
+    end
+
+    private def read_shortstr_cached(payload : Bytes,
+                                     offset : Int32,
+                                     cached : String?) : Tuple(String, Int32)?
+      return nil if offset >= payload.size
+
+      size = payload[offset].to_i32
+      start = offset + 1
+      finish = start + size
+      return nil if payload.size < finish
+
+      if cached && shortstr_matches?(payload, start, size, cached)
+        {cached, finish}
+      else
+        {String.new(payload[start, size]), finish}
+      end
+    end
+
+    private def shortstr_matches?(payload : Bytes,
+                                  start : Int32,
+                                  size : Int32,
+                                  cached : String) : Bool
+      cached_bytes = cached.to_slice
+      return false unless cached_bytes.size == size
+
+      index = 0
+      while index < size
+        return false unless payload[start + index] == cached_bytes[index]
+        index += 1
+      end
+      true
     end
 
     private def process_header_frame(frame : Amqp::Wire::Frame) : Nil

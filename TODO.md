@@ -343,6 +343,14 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 199 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 38 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_range_dense_20260518.json` reports healthy confirm lanes, including `confirm_batch_wait` median ~44.9k msg/s, `confirm_batch_wait_bytes` ~43.7k, and `confirm_window_500` ~15.3k. Treat this as dense settlement allocation/sort-work reduction with noisy live throughput, not a hard perf guarantee.
+- [x] Apply the twenty-first higher-level LTP/WBA cached deliver string corridor move.
+  - Frame: `Window` = stable `basic.deliver` streams where consumer tag, exchange, and routing key repeat; `Transport` = broker deliver method payload -> pending delivery metadata; `Potential` = `(shortstr_allocations_per_delivery, malformed_payload_fallback, route_correctness, consume_latency)`.
+  - Progress: channel method handling now parses `basic.deliver` payloads with a channel-local shortstr cache, reusing repeated consumer-tag/exchange/routing-key strings after warmup. Malformed or non-deliver payloads still fall back to the existing generic method path.
+  - Adversary guard: existing live multi-consumer same-channel routing spec and full channel/subscription/stats specs cover interleaved tags and delivery routing after the cached parser.
+  - Evidence: focused `/opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr spec/wire/basic_methods_spec.cr --error-trace` exits 0: 41 examples, 0 failures, 0 errors, 26 pending.
+  - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 199 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 31 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_deliver_string_cache_20260518.json` reports `consume_no_ack_preloaded` median ~511.7k msg/s and `consume_ack_preloaded` median ~436.9k. Treat this as delivery metadata allocation reduction with directional no-ack consume signal; ack consume remains noisy.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
