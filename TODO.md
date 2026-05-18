@@ -250,6 +250,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, `crystal tool format --check src spec tools/perf_publish.cr`, and `git diff --check` exit 0.
   - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_consume_lane_20260518.json` emits `consume_no_ack_preloaded` with median ~247.3k msg/s over samples ~131.1k/~396.6k/~247.3k; treat this as a noisy read-side baseline, not a release guarantee.
+- [x] Apply the tenth higher-level LTP/WBA pending-body reuse move.
+  - Frame: `Window` = single-frame or empty inbound content bodies; `Transport` = body frame -> pending body state -> delivery/get/return body bytes; `Potential` = `(per_delivery_io_memory_allocations, body_lifetime_correctness, consume_latency)`.
+  - Progress: `emit_pending_delivery` now clears/reuses the pending `IO::Memory` buffer when the emitted body came from the direct single-frame path or is empty. Multi-frame bodies still detach the old `IO::Memory` because the emitted `Bytes` slice must remain stable after delivery.
+  - Evidence: focused `crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 24 pending.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_pending_body_reuse_20260518.json` reports `consume_no_ack_preloaded` median ~251.5k msg/s over noisy samples; treat as allocation reduction plus behavioral proof, not a clean throughput win.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

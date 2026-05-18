@@ -2331,13 +2331,18 @@ module Amqp
     private def emit_pending_delivery : Nil
       method = @pending_method
       props = @pending_props || Properties.new
-      body_bytes = @pending_body_direct || @pending_body.to_slice
+      body_direct = @pending_body_direct
+      body_bytes = body_direct || @pending_body.to_slice
       @pending_method = nil
       @pending_props = nil
       @pending_body_size = 0_u64
       @pending_body_received = 0_u64
-      @pending_body = IO::Memory.new
       @pending_body_direct = nil
+      if body_direct || @pending_body.empty?
+        @pending_body.clear
+      else
+        @pending_body = IO::Memory.new
+      end
 
       case method
       in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver
