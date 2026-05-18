@@ -9,6 +9,31 @@ private def roundtrip_field(value : Amqp::FieldValue) : Amqp::FieldValue
   Types.read_field_value(io)
 end
 
+private def nested_field_table_payload(depth : Int32) : Bytes
+  body = IO::Memory.new
+  Types.write_shortstr(body, "n")
+  if depth <= 0
+    body.write_byte(0x49_u8) # 'I'
+    body.write_bytes(1_i32, IO::ByteFormat::NetworkEndian)
+  else
+    body.write_byte(0x46_u8) # 'F'
+    body.write(nested_field_table_payload(depth - 1))
+  end
+
+  io = IO::Memory.new
+  io.write_bytes(body.bytesize.to_u32, IO::ByteFormat::NetworkEndian)
+  io.write(body.to_slice)
+  io.to_slice
+end
+
+private def nested_arguments(depth : Int32) : Amqp::Arguments
+  value = 1_i32.as(Amqp::FieldValue)
+  depth.times do
+    value = Amqp::Arguments{"n" => value}.as(Amqp::FieldValue)
+  end
+  Amqp::Arguments{"n" => value}
+end
+
 describe Amqp::Wire::AmqpZeroNineOne::Types do
   describe "shortstr" do
     it "round-trips empty and small strings" do
@@ -112,6 +137,20 @@ describe Amqp::Wire::AmqpZeroNineOne::Types do
       Types.write_field_table(io, Amqp::Arguments.new)
       io.rewind
       Types.read_field_table(io).should eq(Amqp::Arguments.new)
+    end
+
+    it "raises when decoded field-table nesting exceeds the codec cap" do
+      io = IO::Memory.new(nested_field_table_payload(Types::MAX_FIELD_NESTING + 1))
+
+      expect_raises(Amqp::ProtocolError, /field nesting depth/) do
+        Types.read_field_table(io)
+      end
+    end
+
+    it "raises when encoded field-table nesting exceeds the codec cap" do
+      expect_raises(Amqp::ConfigurationError, /field nesting depth/) do
+        Types.write_field_table(IO::Memory.new, nested_arguments(Types::MAX_FIELD_NESTING + 1))
+      end
     end
   end
 end

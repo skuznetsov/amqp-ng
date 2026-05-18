@@ -161,6 +161,10 @@ The full v0 tag table:
 
 Unknown tags MUST raise `Amqp::ProtocolError`.
 
+Nested field-arrays and field-tables are bounded to 32 recursive
+container levels. Decode overflow raises `Amqp::ProtocolError`; encode
+overflow raises `Amqp::ConfigurationError`.
+
 ### 3.1 Spec vs RabbitMQ differences
 
 The published AMQP 0-9-1 spec defines: `t, b, B, U, u, I, i, L, l, f,
@@ -369,3 +373,4 @@ The "build to memory, write length" approach is mandatory.
 | T-CODEC-TYPES-013        | `Float32`/`Float64` IEEE 754 big-endian round-trip   |
 | T-CODEC-TYPES-014        | `Time` timestamp is signed Int64 seconds-since-epoch |
 | T-CODEC-TYPES-015        | RabbitMQ `l` (Int64) decode accepted as `l`          |
+| T-CODEC-TYPES-016        | Nested table/array depth overflow raises             |

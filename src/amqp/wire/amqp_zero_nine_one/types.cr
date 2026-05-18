@@ -4,6 +4,8 @@ require "../../arguments"
 module Amqp::Wire::AmqpZeroNineOne::Types
   extend self
 
+  MAX_FIELD_NESTING = 32
+
   # ---- scalars ---------------------------------------------------------
 
   def read_shortstr(io : IO) : String
@@ -47,7 +49,8 @@ module Amqp::Wire::AmqpZeroNineOne::Types
 
   # ---- field-table / field-array / field-value --------------------------
 
-  def read_field_table(io : IO) : Amqp::Arguments
+  def read_field_table(io : IO, depth : Int32 = 0) : Amqp::Arguments
+    guard_field_nesting!(depth, decode: true)
     total_len = io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian)
     return Amqp::Arguments.new if total_len == 0
 
@@ -57,23 +60,25 @@ module Amqp::Wire::AmqpZeroNineOne::Types
     table = Amqp::Arguments.new
     while inner.pos < inner.size
       name = read_shortstr(inner)
-      value = read_field_value(inner)
+      value = read_field_value(inner, depth)
       table[name] = value
     end
     table
   end
 
-  def write_field_table(io : IO, table : Amqp::Arguments) : Nil
+  def write_field_table(io : IO, table : Amqp::Arguments, depth : Int32 = 0) : Nil
+    guard_field_nesting!(depth, decode: false)
     body = IO::Memory.new
     table.each do |name, value|
       write_shortstr(body, name)
-      write_field_value(body, value)
+      write_field_value(body, value, depth)
     end
     io.write_bytes(body.bytesize.to_u32, IO::ByteFormat::NetworkEndian)
     io.write(body.to_slice) if body.bytesize > 0
   end
 
-  def read_field_array(io : IO) : Array(Amqp::FieldValue)
+  def read_field_array(io : IO, depth : Int32 = 0) : Array(Amqp::FieldValue)
+    guard_field_nesting!(depth, decode: true)
     total_len = io.read_bytes(UInt32, IO::ByteFormat::NetworkEndian)
     return [] of Amqp::FieldValue if total_len == 0
     body = Bytes.new(total_len.to_i32)
@@ -81,19 +86,20 @@ module Amqp::Wire::AmqpZeroNineOne::Types
     inner = IO::Memory.new(body)
     arr = [] of Amqp::FieldValue
     while inner.pos < inner.size
-      arr << read_field_value(inner)
+      arr << read_field_value(inner, depth)
     end
     arr
   end
 
-  def write_field_array(io : IO, arr : Array(Amqp::FieldValue)) : Nil
+  def write_field_array(io : IO, arr : Array(Amqp::FieldValue), depth : Int32 = 0) : Nil
+    guard_field_nesting!(depth, decode: false)
     body = IO::Memory.new
-    arr.each { |v| write_field_value(body, v) }
+    arr.each { |v| write_field_value(body, v, depth) }
     io.write_bytes(body.bytesize.to_u32, IO::ByteFormat::NetworkEndian)
     io.write(body.to_slice) if body.bytesize > 0
   end
 
-  def read_field_value(io : IO) : Amqp::FieldValue
+  def read_field_value(io : IO, depth : Int32 = 0) : Amqp::FieldValue
     tag = io.read_byte
     raise IO::EOFError.new("eof reading field-value tag") if tag.nil?
     case tag
@@ -120,11 +126,11 @@ module Amqp::Wire::AmqpZeroNineOne::Types
     when 0x53_u8 # 'S' longstr (treated as String at this layer)
       read_longstr_string(io)
     when 0x41_u8 # 'A' field-array
-      read_field_array(io)
+      read_field_array(io, depth + 1)
     when 0x54_u8 # 'T' timestamp (Int64 seconds-since-epoch)
       Time.unix(io.read_bytes(Int64, IO::ByteFormat::NetworkEndian))
     when 0x46_u8 # 'F' field-table
-      read_field_table(io)
+      read_field_table(io, depth + 1)
     when 0x56_u8 # 'V' void
       nil
     when 0x78_u8 # 'x' byte-array (RabbitMQ extension)
@@ -138,7 +144,7 @@ module Amqp::Wire::AmqpZeroNineOne::Types
     end
   end
 
-  def write_field_value(io : IO, value : Amqp::FieldValue) : Nil
+  def write_field_value(io : IO, value : Amqp::FieldValue, depth : Int32 = 0) : Nil
     case value
     when Nil
       io.write_byte(0x56_u8) # 'V'
@@ -183,12 +189,19 @@ module Amqp::Wire::AmqpZeroNineOne::Types
       io.write_bytes(value.to_unix.to_i64, IO::ByteFormat::NetworkEndian)
     when Array
       io.write_byte(0x41_u8) # 'A'
-      write_field_array(io, value)
+      write_field_array(io, value, depth + 1)
     when Hash
       io.write_byte(0x46_u8) # 'F'
-      write_field_table(io, value)
+      write_field_table(io, value, depth + 1)
     else
       raise Amqp::ConfigurationError.new("unsupported field-value type #{value.class}")
+    end
+  end
+
+  private def guard_field_nesting!(depth : Int32, *, decode : Bool) : Nil
+    if depth > MAX_FIELD_NESTING
+      message = "AMQP field nesting depth #{depth} exceeds maximum #{MAX_FIELD_NESTING}"
+      raise decode ? Amqp::ProtocolError.new(message) : Amqp::ConfigurationError.new(message)
     end
   end
 end

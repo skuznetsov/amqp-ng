@@ -296,19 +296,19 @@ deeply-nested field-tables to OOM the decoder.
 frame-end bytes, and payloads larger than `frame_max - 8`. Channel
 content assembly rejects body frames that overflow the declared content
 body size. The field codec rejects unsupported decimal tags and unknown
-field-value tags.
+field-value tags, and bounds nested field-array/table decode to 32
+recursive container levels.
 
 The current implementation does not expose a maximum content body-size
-cap and does not have an executable nested field-table depth cap. A
-malicious broker remains able to advertise a large content body-size
-and then stream enough frames to force memory growth.
+cap. A malicious broker remains able to advertise a large content
+body-size and then stream enough frames to force memory growth.
 
 **Severity.** High (DoS by malicious broker).
 
 **Likelihood.** Very low against trusted brokers.
 
 **Status.** Partially mitigated by per-frame and field-tag guards.
-Message-size and nested-depth hard caps remain future work.
+Message-size hard caps remain future work.
 
 ---
 
