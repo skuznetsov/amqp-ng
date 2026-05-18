@@ -22,11 +22,13 @@ First usable AMQP 0-9-1 release for local downstream-service integration.
 
 ### Verified Locally
 
-- `crystal spec --error-trace`: 174 examples, 0 failures, 0 errors,
-  4 live-gated pending.
+- `crystal spec --error-trace` without a local broker: 208 examples,
+  0 failures, 0 errors, 90 live-broker pending.
 - `crystal tool format --check src spec tools/perf_publish.cr`.
 - `crystal build tools/perf_publish.cr --no-codegen --error-trace`.
 - `git diff --check`.
+- LavinMQ 2.4.0 focused publish/confirm smoke:
+  72 examples, 0 failures, 0 errors, 0 pending.
 - Downstream service compile smoke passed locally.
 - RabbitMQ 3.13.7 opt-in TLS/backpressure/chaos suite: 150 examples,
   0 failures, 0 errors, 0 pending.

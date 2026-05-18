@@ -18,7 +18,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `shard.yml`, `src/amqp.cr`, `CHANGELOG.md`, and `docs/17-mvp-cutline.md`.
   - Evidence: downstream service `shards install` installs `amqp (0.1.0 at ../amqp-ng)`.
   - Evidence: downstream service CLI compile smoke exits 0.
-  - Evidence: current default `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current no-broker default `crystal spec --error-trace` exits 0: 208 examples, 0 failures, 0 errors, 90 pending.
   - Evidence: RabbitMQ opt-in TLS/backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: LavinMQ 2.4.0 opt-in backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
 
@@ -31,7 +31,7 @@ Status: active working ledger for `amqp-ng`.
 - [x] Re-run the full current verification baseline.
   - DoD: `crystal spec` exits 0.
   - DoD: `crystal tool format --check` status is documented as current pass/fail, with pre-existing failures separated from new failures.
-  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 208 examples, 0 failures, 0 errors, 90 pending.
   - Evidence: earlier local full opt-in `AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-rabbit AMQP_TLS_URL='amqps://guest:guest@localhost:5671/' AMQP_TLS_CA_CERT='.tmp/rabbitmq_tls/certs/ca_certificate.pem' timeout 180 crystal spec` exited 0 before later parity additions; re-run before public release.
   - Evidence: earlier LavinMQ 2.4.0 default and opt-in backpressure/chaos suites passed before later parity additions; re-run after broker-compat changes.
   - Evidence: `crystal tool format --check src spec` exits 0.
@@ -88,14 +88,14 @@ Status: active working ledger for `amqp-ng`.
   - Scope: `README.md` no longer describes the project as pre-implementation.
   - DoD: README status matches the current implementation and verification state.
   - Evidence: `README.md` describes active v0 implementation, current verified spec count, clean format status, and remaining high-risk areas.
-  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 208 examples, 0 failures, 0 errors, 90 pending.
 
 - [x] Decide whether performance claims belong in v0 docs.
   - Problem: `docs/14-performance-contract.md` names concrete throughput targets without a shipped harness.
   - DoD: either add a runnable harness with reproducibility notes or downgrade claims to roadmap/non-normative.
   - Decision: downgrade to roadmap/non-normative until `spec/perf/` exists.
   - Evidence: `docs/14-performance-contract.md` is now "Performance Roadmap"; `docs/16-falsifier-matrix.md` marks `T-PERF-*` rows as reserved roadmap falsifiers.
-  - Evidence: current default full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 208 examples, 0 failures, 0 errors, 90 pending.
 
 ## Backlog
 
@@ -183,7 +183,7 @@ Status: active working ledger for `amqp-ng`.
   - Work-pool audit: old `amqp-client.cr` exposes `work_pool` through `basic_consume` and `Queue#subscribe`; both are covered by current wrappers.
   - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local downstream release.
   - Lower-priority compatibility niceties: NamedTuple `args` overloads are still omitted from the v0 practical surface unless a real migration site needs them; `queue_declare(no_wait:)` is now covered through the LavinMQ-shaped facade.
-  - Evidence: latest full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: latest no-broker full `crystal spec --error-trace` exits 0: 208 examples, 0 failures, 0 errors, 90 pending.
   - Evidence: `crystal tool format --check src spec tools/perf_publish.cr`, `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: private downstream service compile smoke exits 0 after the parity additions.
   - Cutline: implement aliases/wrappers/callbacks before niche protocol features; any future WebSocket transport needs explicit docs/spec updates because v0 docs currently defer or omit it.

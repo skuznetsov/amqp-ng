@@ -283,7 +283,14 @@ Current default local gate:
 crystal spec --error-trace
 ```
 
-Latest result: `174 examples, 0 failures, 0 errors, 4 pending`.
+Latest no-broker result: `208 examples, 0 failures, 0 errors, 90 pending`.
+Most pending examples are live-broker specs that intentionally skip when
+`AMQP_URL` is unreachable.
+
+Latest focused LavinMQ publish/confirm smoke:
+`72 examples, 0 failures, 0 errors, 0 pending` for
+`spec/message_spec.cr`, `spec/api_surface_spec.cr`,
+`spec/channel_spec.cr`, and `spec/confirms_spec.cr`.
 
 Additional gates used for this branch:
 
@@ -293,7 +300,8 @@ crystal build tools/perf_publish.cr --no-codegen --error-trace
 git diff --check
 ```
 
-The four default pending specs are live/environment gated:
+With a plain AMQP broker available, the remaining default pending specs
+are environment gated:
 
 - TLS broker handshake via `AMQP_TLS_URL`.
 - Subscription backpressure timing via `AMQP_BACKPRESSURE_LIVE`.
