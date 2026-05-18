@@ -335,6 +335,14 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 198 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_stats_batch_20260518.json` reports healthy confirm lanes, including `confirm_batch_wait` median ~28.9k msg/s and `confirm_window_500` median ~13.9k msg/s. Treat this as atomic stats work reduction under multiple confirms, not a clean throughput guarantee.
+- [x] Apply the twentieth higher-level LTP/WBA dense confirm-range settlement move.
+  - Frame: `Window` = dense broker `multiple=true` confirm ranges; `Transport` = low unconfirmed tag -> broker tag -> settled publish list; `Potential` = `(range_settlement_allocations, sort_work, sparse_range_safety, callback_ordering)`.
+  - Progress: dense `multiple=true` settlement now walks the monotonic confirm-tag range directly instead of building `@unconfirmed.select { ... }.sort`. Sparse ranges keep the old select/sort strategy to avoid pathological loops after many individual settlements.
+  - Adversary guard: added a multiple settlement spec with earlier individual holes in the range to prove sparse/dense routing preserves exact outcomes and stats.
+  - Evidence: focused `/opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 38 examples, 0 failures, 0 errors, 36 pending.
+  - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 199 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 38 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_confirm_range_dense_20260518.json` reports healthy confirm lanes, including `confirm_batch_wait` median ~44.9k msg/s, `confirm_batch_wait_bytes` ~43.7k, and `confirm_window_500` ~15.3k. Treat this as dense settlement allocation/sort-work reduction with noisy live throughput, not a hard perf guarantee.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

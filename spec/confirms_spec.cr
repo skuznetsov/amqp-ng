@@ -516,6 +516,38 @@ describe "publisher confirms" do
       end
     end
 
+    it "settles multiple=true ranges after earlier individual settlements" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        outcomes = Array(::Channel(Amqp::ConfirmOutcome)).new
+        tags = 5.times.map do
+          outcome_ch = ::Channel(Amqp::ConfirmOutcome).new(1)
+          outcomes << outcome_ch
+          ch.__spec_register_pending_confirm(outcome_ch)
+        end.to_a
+
+        ch.__spec_settle_publish(tags[0], multiple: false, nacked: false)
+        ch.__spec_settle_publish(tags[2], multiple: false, nacked: false)
+        ch.__spec_lowest_unconfirmed_tag.should eq(tags[1])
+
+        ch.__spec_settle_publish(tags[4], multiple: true, nacked: false)
+
+        outcomes.each_with_index do |outcome_ch, index|
+          outcome = outcome_ch.receive?
+          outcome.should_not be_nil
+          outcome.not_nil!.delivery_tag.should eq(tags[index])
+          outcome.not_nil!.kind.ack?.should be_true
+          outcome_ch.receive?.should be_nil
+        end
+        ch.__spec_lowest_unconfirmed_tag.should be_nil
+        conn.stats.snapshot.confirmed_ack.should eq(5_i64)
+        ch.wait_for_confirms.should be_true
+        ch.close
+      end
+    end
+
     it "does not block the confirm tracker when an async outcome is never received" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

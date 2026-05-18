@@ -2703,12 +2703,7 @@ module Amqp
       @confirms_mutex.synchronize do
         if multiple
           raise PublishOutOfOrderError.new(tag) unless @unconfirmed.includes?(tag)
-          settled = [] of SettledPublish
-          tags = @unconfirmed.select { |s| s <= tag }.sort
-          tags.each do |seq|
-            settled << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
-          end
-          refresh_lowest_unconfirmed_locked
+          settled = settle_multiple_publishes_locked(tag, nacked)
           multiple_settled = settled
           @confirms_nacked = true if nacked || settled.any? { |entry| entry.outcome.kind.returned? }
         else
@@ -2745,6 +2740,32 @@ module Amqp
         @connection.stats.incr_confirmed_ack(ack_count) if ack_count > 0
         @connection.stats.incr_confirmed_nack(nack_count) if nack_count > 0
       end
+    end
+
+    private def settle_multiple_publishes_locked(tag : UInt64, nacked : Bool) : Array(SettledPublish)
+      low = @lowest_unconfirmed || tag
+      span = tag - low + 1_u64
+      dense_limit = @unconfirmed.size.to_u64 * 4_u64
+      settled = [] of SettledPublish
+
+      if span <= dense_limit
+        seq = low
+        loop do
+          if @unconfirmed.includes?(seq)
+            settled << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
+          end
+          break if seq == tag
+          seq += 1_u64
+        end
+      else
+        tags = @unconfirmed.select { |seq| seq <= tag }.sort
+        tags.each do |seq|
+          settled << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
+        end
+      end
+
+      refresh_lowest_unconfirmed_locked
+      settled
     end
 
     private def enqueue_confirm_callback(callback : ConfirmCallback, ok : Bool) : Nil
