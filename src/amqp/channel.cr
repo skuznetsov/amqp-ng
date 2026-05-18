@@ -2623,13 +2623,22 @@ module Amqp
     private def process_header_frame(frame : Amqp::Wire::Frame) : Nil
       pending = @pending_method
       raise ProtocolError.new("channel #{@id}: header without method") if pending.nil?
-      decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode_empty(frame.payload) ||
-                Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode(frame.payload)
-      unless decoded.class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
-        raise ProtocolError.new("channel #{@id}: header class #{decoded.class_id} != 60")
+      if metadata = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode_empty_metadata(frame.payload)
+        class_id = metadata[0]
+        body_size = metadata[1]
+        properties = nil
+      else
+        decoded = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode(frame.payload)
+        class_id = decoded.class_id
+        body_size = decoded.body_size
+        properties = decoded.properties
       end
-      @pending_props = decoded.properties
-      @pending_body_size = decoded.body_size
+
+      unless class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
+        raise ProtocolError.new("channel #{@id}: header class #{class_id} != 60")
+      end
+      @pending_props = properties
+      @pending_body_size = body_size
       @pending_body_received = 0_u64
       if @pending_body_size == 0
         emit_pending_delivery

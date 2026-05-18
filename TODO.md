@@ -358,6 +358,14 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including a block-consume no-ack channel-liveness falsifier.
   - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 200 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+- [x] Apply the twenty-second higher-level LTP/WBA empty-header metadata corridor move.
+  - Frame: `Window` = incoming empty content-header payloads for default-property deliveries; `Transport` = broker header frame -> channel handler -> pending body assembly; `Potential` = `(decoded_record_materialization, empty_properties_materialization, handler_decode_work, consume_latency)`.
+  - Progress: `ContentHeader.decode_empty_metadata` now returns only `{class_id, body_size}` for exact empty-property headers, and `Channel#process_header_frame` uses it directly. Non-empty or malformed headers still fall back to the full decoder.
+  - Evidence: focused default `/opt/homebrew/bin/crystal spec spec/wire/content_header_spec.cr spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 43 examples, 0 failures, 0 errors, 27 pending.
+  - Evidence: live LavinMQ 2.4.0 focused `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/wire/content_header_spec.cr spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 43 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 200 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_empty_header_metadata_20260518.json` reports `decode_empty_header_metadata` median ~897.3M ops/s vs `decode_empty_header_direct` ~870.3M and generic ~29.3M; `consume_no_ack_preloaded` median ~495.1k msg/s and `consume_ack_preloaded` ~434.2k remain directional/noisy.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

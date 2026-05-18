@@ -151,14 +151,20 @@ module Amqp::Wire::AmqpZeroNineOne
 
     record Decoded, class_id : UInt16, body_size : UInt64, properties : Amqp::Properties
 
-    def decode_empty(payload : Bytes) : Decoded?
+    def decode_empty_metadata(payload : Bytes) : Tuple(UInt16, UInt64)?
       return nil unless payload.size == 14
 
       weight = read_u16_be(payload, 2)
       flags = read_u16_be(payload, 12)
       return nil unless weight == 0 && flags == 0
 
-      Decoded.new(read_u16_be(payload, 0), read_u64_be(payload, 4), Amqp::Properties.new)
+      {read_u16_be(payload, 0), read_u64_be(payload, 4)}
+    end
+
+    def decode_empty(payload : Bytes) : Decoded?
+      metadata = decode_empty_metadata(payload) || return nil
+
+      Decoded.new(metadata[0], metadata[1], Amqp::Properties.new)
     end
 
     def decode(payload : Bytes) : Decoded

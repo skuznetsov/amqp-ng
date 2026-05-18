@@ -177,6 +177,12 @@ def decode_empty_header_direct(payload : Bytes) : UInt64
   decoded.body_size
 end
 
+def decode_empty_header_metadata(payload : Bytes) : UInt64
+  metadata = Amqp::Wire::AmqpZeroNineOne::ContentHeader.decode_empty_metadata(payload) ||
+             raise "expected direct empty header metadata decode"
+  metadata[1]
+end
+
 def build_deliver_payload(consumer_tag : String,
                           delivery_tag : UInt64,
                           redelivered : Bool,
@@ -253,7 +259,8 @@ empty_header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
   Amqp::Properties.new,
 )
 {decode_empty_header_generic(empty_header_payload),
- decode_empty_header_direct(empty_header_payload)}.each do |body_size|
+ decode_empty_header_direct(empty_header_payload),
+ decode_empty_header_metadata(empty_header_payload)}.each do |body_size|
   raise "bad empty header decode" unless body_size == body.size.to_u64
 end
 empty_header_payloads = Array.new(256) do |i|
@@ -286,6 +293,18 @@ stages["decode_empty_header_direct"] = sample_rates("decode_empty_header_direct"
     sum &+= body_size
   end
   raise "bad empty header decode checksum" unless sum == expected
+end
+
+stages["decode_empty_header_metadata"] = sample_rates("decode_empty_header_metadata", samples, stage_n) do
+  sum = 0_u64
+  expected = 0_u64
+  stage_n.times do |i|
+    index = i & 255
+    body_size = decode_empty_header_metadata(empty_header_payloads[index])
+    expected &+= body.size.to_u64 + index.to_u64
+    sum &+= body_size
+  end
+  raise "bad empty header metadata checksum" unless sum == expected
 end
 
 deliver_payloads = Array.new(256) do |i|

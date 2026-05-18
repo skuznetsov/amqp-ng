@@ -61,15 +61,23 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     direct.class_id.should eq(generic.class_id)
     direct.body_size.should eq(generic.body_size)
     direct.properties.empty?.should be_true
+
+    metadata = CH.decode_empty_metadata(payload)
+    metadata.should_not be_nil
+    metadata = metadata.not_nil!
+    metadata[0].should eq(generic.class_id)
+    metadata[1].should eq(generic.body_size)
   end
 
   it "does not direct-decode non-empty properties or malformed empty headers" do
     payload = CH.encode(60_u16, 123_u64, Amqp::Properties.new(content_type: "text/plain"))
     CH.decode_empty(payload).should be_nil
+    CH.decode_empty_metadata(payload).should be_nil
 
     malformed = CH.encode(60_u16, 123_u64, Amqp::Properties.new)
     malformed[3] = 1_u8
     CH.decode_empty(malformed).should be_nil
+    CH.decode_empty_metadata(malformed).should be_nil
   end
 
   it "content-type + persistent → flags 0x9000" do
