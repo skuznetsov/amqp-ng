@@ -52,6 +52,12 @@ module Amqp::Wire
       io.write_byte(FRAME_END)
     end
 
+    def self.prefix(type : FrameType, channel : UInt16, payload_size : Int) : Bytes
+      io = IO::Memory.new(7)
+      write_prefix(io, type, channel, payload_size)
+      io.to_slice
+    end
+
     def self.write_prefix(io : IO, type : FrameType, channel : UInt16, payload_size : Int) : Nil
       io.write_byte(type.value)
       io.write_bytes(channel, IO::ByteFormat::NetworkEndian)

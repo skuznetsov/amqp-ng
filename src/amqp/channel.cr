@@ -162,6 +162,9 @@ module Amqp
     @empty_header_candidate_body_size : UInt64?
     @cached_empty_content_header_frame : Bytes?
     @cached_empty_content_header_frame_body_size : UInt64?
+    @body_frame_prefix_candidate_size : Int32?
+    @cached_body_frame_prefix : Bytes?
+    @cached_body_frame_prefix_size : Int32?
 
     protected def initialize(@connection : Connection, @id : UInt16)
       @state = State::Initial
@@ -219,6 +222,9 @@ module Amqp
       @empty_header_candidate_body_size = nil
       @cached_empty_content_header_frame = nil
       @cached_empty_content_header_frame_body_size = nil
+      @body_frame_prefix_candidate_size = nil
+      @cached_body_frame_prefix = nil
+      @cached_body_frame_prefix_size = nil
     end
 
     protected def open : Nil
@@ -1969,9 +1975,7 @@ module Amqp
       offset = 0
       while offset < body.size
         chunk = Math.min(max_body, body.size - offset)
-        Amqp::Wire::Frame.write_prefix(io, Amqp::Wire::FrameType::Body, @id, chunk)
-        io.write(body[offset, chunk])
-        io.write_byte(Amqp::Wire::FRAME_END)
+        write_body_frame(io, body, offset, chunk)
         offset += chunk
       end
     end
@@ -1986,11 +1990,19 @@ module Amqp
       offset = 0
       while offset < body.size
         chunk = Math.min(max_body, body.size - offset)
-        Amqp::Wire::Frame.write_prefix(io, Amqp::Wire::FrameType::Body, @id, chunk)
-        io.write(body[offset, chunk])
-        io.write_byte(Amqp::Wire::FRAME_END)
+        write_body_frame(io, body, offset, chunk)
         offset += chunk
       end
+    end
+
+    private def write_body_frame(io : IO, body : Bytes, offset : Int32, chunk : Int32) : Nil
+      if prefix = cached_body_frame_prefix_for(chunk)
+        io.write(prefix)
+      else
+        Amqp::Wire::Frame.write_prefix(io, Amqp::Wire::FrameType::Body, @id, chunk)
+      end
+      io.write(body[offset, chunk])
+      io.write_byte(Amqp::Wire::FRAME_END)
     end
 
     private def write_content_header_frame(io : IO,
@@ -2022,6 +2034,22 @@ module Amqp
       end
 
       @empty_header_candidate_body_size = body_size
+      nil
+    end
+
+    private def cached_body_frame_prefix_for(chunk_size : Int32) : Bytes?
+      if prefix = @cached_body_frame_prefix
+        return prefix if @cached_body_frame_prefix_size == chunk_size
+      end
+
+      if @body_frame_prefix_candidate_size == chunk_size
+        prefix = Amqp::Wire::Frame.prefix(Amqp::Wire::FrameType::Body, @id, chunk_size)
+        @cached_body_frame_prefix = prefix
+        @cached_body_frame_prefix_size = chunk_size
+        return prefix
+      end
+
+      @body_frame_prefix_candidate_size = chunk_size
       nil
     end
 

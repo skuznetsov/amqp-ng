@@ -24,6 +24,13 @@ describe Amqp::Wire::Frame do
     out.payload.should eq(payload)
   end
 
+  it "builds a reusable frame prefix equivalent to direct writing" do
+    expected = IO::Memory.new
+    Amqp::Wire::Frame.write_prefix(expected, Amqp::Wire::FrameType::Body, 7_u16, 256)
+
+    Amqp::Wire::Frame.prefix(Amqp::Wire::FrameType::Body, 7_u16, 256).should eq(expected.to_slice)
+  end
+
   it "raises on bad frame-end byte" do
     # METHOD type=1, channel=0, length=0, BAD end byte 0xFF
     bad = Bytes[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF]

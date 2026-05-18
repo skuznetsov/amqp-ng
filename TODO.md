@@ -230,6 +230,13 @@ Status: active working ledger for `amqp-ng`.
   - Progress: confirm batch and confirm-window paths now increment published stats once per successful batch/window after the write lock is released, instead of once per message under `connection.with_write`.
   - Evidence: live LavinMQ 2.4.0 `crystal spec spec/stats_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_stats_batch_20260518.json` shows batch/window lanes remained healthy but did not prove a clean end-to-end throughput win; treat this as write-lock work reduction rather than a throughput claim.
+- [x] Apply the eighth higher-level LTP/WBA body-prefix corridor move.
+  - Frame: `Window` = repeated body-frame prefixes for same-size publish chunks; `Transport` = publish method/header/body frame sequence under the connection write mutex; `Potential` = `(write_lock_work, body_prefix_write_calls, allocations_on_unique_chunk_sizes, live_publish_latency)`.
+  - Progress: `Frame.prefix` now builds reusable frame prefixes with a byte-equivalence spec, and channel publish paths use a delayed one-entry cache for repeated body chunk sizes. First-seen chunk sizes still direct-write, so alternating/unique sizes do not allocate cached prefixes.
+  - Evidence: `crystal spec spec/wire/frame_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 58 examples, 0 failures, 0 errors, 52 pending.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 187 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 56 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_body_prefix_20260518.json` reports `publish_single` ~715.2k msg/s and `publish_batch_bytes` ~852.7k; treat this as directional only, not a clean end-to-end win.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
