@@ -19,7 +19,7 @@ describe Amqp::Message do
 
   it "copies IO bodies into owned bytes" do
     source = String.new(Bytes[0x64, 0x65, 0x66])
-    io = IO::Memory.new(source.to_slice, writeable: false)
+    io = IO::Memory.new(source.to_slice, false)
     message = Amqp::Message.new(io)
 
     message.body.should eq(source.to_slice)

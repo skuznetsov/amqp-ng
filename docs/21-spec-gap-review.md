@@ -155,16 +155,23 @@ Evidence:
 - `docs/16-falsifier-matrix.md` §2 and §9.
 - `src/amqp/config.cr` rejects unknown query keys and parses the v0
   query surface: `heartbeat`, `channel_max`, `frame_max`,
-  `connect_timeout`, `recovery`, `product`, `information`.
+  `connect_timeout`, `tcp_nodelay`, `buffer_size`, `recovery`,
+  `product`, `information`.
 - `spec/config_spec.cr` covers defaults/vhost decoding, recognized
   query keys, keyword precedence, unknown keys, strict numeric parsing,
-  and recovery query validation.
+  socket-tuning validation, recovery query validation, and plain-AMQP
+  plus TLS-context rejection.
+
+Converted falsifiers:
+- `T-URI-UNKNOWN-001`: unknown query key raises `UriError` listing the key.
+- Representative `T-URI-PRECEDENCE-*`: keyword values override query values.
+- Representative `T-URI-VHOST-*`: slash-containing and empty vhost forms.
+- Representative `T-TLS-SCHEME-*`: `amqps://` implies TLS and
+  `amqp://` plus a TLS context is rejected before socket open.
 
 Remaining falsifiers:
-- `T-URI-UNKNOWN-001`: unknown query key raises `UriError` listing the key.
-- `T-URI-PRECEDENCE-001..N`: kwargs override query values.
-- `T-URI-VHOST-001..006`: slash-containing and empty vhost encoding.
-- `T-TLS-SCHEME-001..003`: every documented scheme/context conflict.
+- Live TLS handshake and certificate failure rows remain environment-gated
+  through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT` rather than default-local.
 
 ## Already Converted During This Review
 
@@ -172,9 +179,10 @@ Remaining falsifiers:
   compile-time spec and `Subscription` delegates select actions to its
   internal `::Channel`.
 - `Subscription` default buffer was aligned to documented capacity 16.
-- `T-URI-UNKNOWN-001`, representative `T-URI-PRECEDENCE-*`, numeric
-  coercion, and recovery-query rejection now have focused coverage in
-  `spec/config_spec.cr`.
+- URI unknown-key, representative precedence/vhost cases, numeric
+  coercion, socket-tuning validation, TLS-context conflict, and
+  recovery-query rejection now have focused coverage in
+  `spec/config_spec.cr` / `spec/tls_spec.cr`.
 
 ## Recommended Next Order
 

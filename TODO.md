@@ -191,7 +191,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `crystal spec spec/api_surface_spec.cr spec/channel_spec.cr --error-trace` exits 0: 26 examples, 0 failures.
   - Work-pool audit: old `amqp-client.cr` exposes `work_pool` through `basic_consume` and `Queue#subscribe`; both are covered by current wrappers.
   - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local downstream release.
-  - Lower-priority compatibility niceties: NamedTuple `args` overloads are still omitted from the v0 practical surface unless a real migration site needs them; `queue_declare(no_wait:)` is now covered through the LavinMQ-shaped facade.
+  - Lower-priority compatibility nicety: some `no_wait` overloads are accepted for source compatibility but are not always broker-no-wait optimized; NamedTuple `args` overloads are now covered by the public helper surface.
   - Evidence: latest no-broker full `crystal spec --error-trace` exits 0: 211 examples, 0 failures, 0 errors, 91 pending.
   - Evidence: `crystal tool format --check src spec tools/perf_publish.cr`, `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: private downstream service compile smoke exits 0 after the parity additions.
