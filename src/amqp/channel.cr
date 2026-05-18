@@ -150,6 +150,15 @@ module Amqp
     @topology_bindings : Array(BindOp)
     @topology_qos : QosOp?
     @topology_consumers : Hash(String, ConsumeOp)
+    @publish_frame_candidate_exchange : String?
+    @publish_frame_candidate_routing_key : String?
+    @publish_frame_candidate_mandatory : Bool
+    @publish_frame_candidate_immediate : Bool
+    @cached_publish_method_frame : Bytes?
+    @cached_publish_method_frame_exchange : String?
+    @cached_publish_method_frame_routing_key : String?
+    @cached_publish_method_frame_mandatory : Bool
+    @cached_publish_method_frame_immediate : Bool
 
     protected def initialize(@connection : Connection, @id : UInt16)
       @state = State::Initial
@@ -195,6 +204,15 @@ module Amqp
       @topology_bindings = [] of BindOp
       @topology_qos = nil
       @topology_consumers = {} of String => ConsumeOp
+      @publish_frame_candidate_exchange = nil
+      @publish_frame_candidate_routing_key = nil
+      @publish_frame_candidate_mandatory = false
+      @publish_frame_candidate_immediate = false
+      @cached_publish_method_frame = nil
+      @cached_publish_method_frame_exchange = nil
+      @cached_publish_method_frame_routing_key = nil
+      @cached_publish_method_frame_mandatory = false
+      @cached_publish_method_frame_immediate = false
     end
 
     protected def open : Nil
@@ -1704,6 +1722,39 @@ module Amqp
       )
     end
 
+    private def cached_publish_method_frame_for(exchange : String,
+                                                routing_key : String,
+                                                mandatory : Bool,
+                                                immediate : Bool) : Bytes?
+      if frame = @cached_publish_method_frame
+        if @cached_publish_method_frame_exchange == exchange &&
+           @cached_publish_method_frame_routing_key == routing_key &&
+           @cached_publish_method_frame_mandatory == mandatory &&
+           @cached_publish_method_frame_immediate == immediate
+          return frame
+        end
+      end
+
+      if @publish_frame_candidate_exchange == exchange &&
+         @publish_frame_candidate_routing_key == routing_key &&
+         @publish_frame_candidate_mandatory == mandatory &&
+         @publish_frame_candidate_immediate == immediate
+        frame = publish_method_frame(exchange, routing_key, mandatory, immediate)
+        @cached_publish_method_frame = frame
+        @cached_publish_method_frame_exchange = exchange
+        @cached_publish_method_frame_routing_key = routing_key
+        @cached_publish_method_frame_mandatory = mandatory
+        @cached_publish_method_frame_immediate = immediate
+        return frame
+      end
+
+      @publish_frame_candidate_exchange = exchange
+      @publish_frame_candidate_routing_key = routing_key
+      @publish_frame_candidate_mandatory = mandatory
+      @publish_frame_candidate_immediate = immediate
+      nil
+    end
+
     private def write_publish_frames(exchange : String,
                                      routing_key : String,
                                      mandatory : Bool,
@@ -1727,9 +1778,13 @@ module Amqp
                                         header_payload : Bytes?,
                                         body : Bytes,
                                         max_body : Int32) : Nil
-      Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_publish_frame(
-        io, @id, exchange, routing_key, mandatory, immediate,
-      )
+      if method_frame = cached_publish_method_frame_for(exchange, routing_key, mandatory, immediate)
+        io.write(method_frame)
+      else
+        Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_publish_frame(
+          io, @id, exchange, routing_key, mandatory, immediate,
+        )
+      end
       write_content_header_frame(io, body.size.to_u64, header_payload)
       offset = 0
       while offset < body.size
