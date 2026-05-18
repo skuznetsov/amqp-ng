@@ -271,6 +271,14 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full default `crystal spec --error-trace` exits 0: 194 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_direct_deliver_parse_20260518.json` reports `parse_basic_deliver_direct` ~11.9M ops/s vs generic ~9.0M ops/s, `consume_no_ack_preloaded` median ~400.1k msg/s, and `consume_ack_preloaded` median ~369.1k msg/s; treat consume deltas as noisy and parser delta as modest because string creation still dominates.
+- [x] Apply the thirteenth higher-level LTP/WBA pending-body container reuse move.
+  - Frame: `Window` = content-bearing method setup before the content header/body frames; `Transport` = method frame -> pending body state -> body assembly; `Potential` = `(per_delivery_io_memory_allocations, body_lifetime_correctness, consume_latency)`.
+  - Progress: content-bearing method handling now clears the existing pending `IO::Memory` body container instead of allocating a fresh container for every `basic.deliver`, `basic.get-ok`, or `basic.return`. Multi-frame bodies still detach their old buffer at emission, so delivered body slices remain stable.
+  - Evidence: focused `crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/confirms_spec.cr spec/stats_spec.cr --error-trace` exits 0: 62 examples, 0 failures, 0 errors, 57 pending.
+  - Evidence: full default `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 194 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_pending_body_reset_20260518.json` reports noisy `consume_no_ack_preloaded` median ~213.0k msg/s and `consume_ack_preloaded` median ~382.3k msg/s. Treat this as allocation reduction plus lifetime proof, not a clean end-to-end throughput win.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

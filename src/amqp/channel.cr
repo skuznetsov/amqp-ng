@@ -2188,9 +2188,7 @@ module Amqp
       return if process_direct_confirm_frame(frame.payload)
       if deliver = Amqp::Wire::AmqpZeroNineOne::BasicMethods.decode_deliver_frame_payload(frame.payload)
         @pending_method = deliver
-        @pending_body = IO::Memory.new
-        @pending_body_direct = nil
-        @pending_body_received = 0_u64
+        reset_pending_body_state
         return
       end
 
@@ -2228,21 +2226,15 @@ module Amqp
         case method_id
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_DELIVER
           @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver.read(body)
-          @pending_body = IO::Memory.new
-          @pending_body_direct = nil
-          @pending_body_received = 0_u64
+          reset_pending_body_state
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_RETURN
           @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return.read(body)
-          @pending_body = IO::Memory.new
-          @pending_body_direct = nil
-          @pending_body_received = 0_u64
+          reset_pending_body_state
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_GET_OK
           @pending_method = Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk.read(body)
-          @pending_body = IO::Memory.new
-          @pending_body_direct = nil
-          @pending_body_received = 0_u64
+          reset_pending_body_state
           return
         when Amqp::Wire::AmqpZeroNineOne::METHOD_ID_BASIC_GET_EMPTY
           Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetEmpty.read(body)
@@ -2283,6 +2275,12 @@ module Amqp
       else
         raise ProtocolError.new("channel #{@id}: unsolicited method (#{class_id},#{method_id})")
       end
+    end
+
+    private def reset_pending_body_state : Nil
+      @pending_body.clear
+      @pending_body_direct = nil
+      @pending_body_received = 0_u64
     end
 
     private def process_direct_confirm_frame(payload : Bytes) : Bool
