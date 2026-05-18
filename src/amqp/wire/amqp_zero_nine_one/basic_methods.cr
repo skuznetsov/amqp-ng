@@ -300,6 +300,14 @@ module Amqp::Wire::AmqpZeroNineOne
       end
     end
 
+    def write_ack_frame(io : IO,
+                        channel : UInt16,
+                        delivery_tag : UInt64,
+                        multiple : Bool) : Nil
+      write_delivery_settlement_frame(io, channel, METHOD_ID_BASIC_ACK,
+        delivery_tag, multiple ? 1_u8 : 0_u8)
+    end
+
     struct Nack
       getter delivery_tag : UInt64
       getter multiple : Bool
@@ -324,6 +332,17 @@ module Amqp::Wire::AmqpZeroNineOne
       end
     end
 
+    def write_nack_frame(io : IO,
+                         channel : UInt16,
+                         delivery_tag : UInt64,
+                         multiple : Bool,
+                         requeue : Bool) : Nil
+      bits = 0_u8
+      bits |= 1_u8 if multiple
+      bits |= 2_u8 if requeue
+      write_delivery_settlement_frame(io, channel, METHOD_ID_BASIC_NACK, delivery_tag, bits)
+    end
+
     struct Reject
       getter delivery_tag : UInt64
       getter requeue : Bool
@@ -339,6 +358,27 @@ module Amqp::Wire::AmqpZeroNineOne
         BitPack.write(io, [@requeue])
         io.to_slice
       end
+    end
+
+    def write_reject_frame(io : IO,
+                           channel : UInt16,
+                           delivery_tag : UInt64,
+                           requeue : Bool) : Nil
+      write_delivery_settlement_frame(io, channel, METHOD_ID_BASIC_REJECT,
+        delivery_tag, requeue ? 1_u8 : 0_u8)
+    end
+
+    private def write_delivery_settlement_frame(io : IO,
+                                                channel : UInt16,
+                                                method_id : UInt16,
+                                                delivery_tag : UInt64,
+                                                bits : UInt8) : Nil
+      Frame.write_prefix(io, FrameType::Method, channel, 13)
+      io.write_bytes(CLASS_ID_BASIC, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(method_id, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(delivery_tag, IO::ByteFormat::NetworkEndian)
+      io.write_byte(bits)
+      io.write_byte(Amqp::Wire::FRAME_END)
     end
 
     struct Recover

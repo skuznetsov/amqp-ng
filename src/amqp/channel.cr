@@ -1205,20 +1205,29 @@ module Amqp
 
     def ack(delivery_tag : UInt64, multiple : Bool = false) : Nil
       ensure_open!
-      payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.new(delivery_tag, multiple).to_payload
-      @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload)
+      @connection.with_write do |io|
+        Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_ack_frame(
+          io, @id, delivery_tag, multiple,
+        )
+      end
     end
 
     def nack(delivery_tag : UInt64, multiple : Bool = false, requeue : Bool = true) : Nil
       ensure_open!
-      payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Nack.new(delivery_tag, multiple, requeue).to_payload
-      @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload)
+      @connection.with_write do |io|
+        Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_nack_frame(
+          io, @id, delivery_tag, multiple, requeue,
+        )
+      end
     end
 
     def reject(delivery_tag : UInt64, requeue : Bool = true) : Nil
       ensure_open!
-      payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Reject.new(delivery_tag, requeue).to_payload
-      @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload)
+      @connection.with_write do |io|
+        Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_reject_frame(
+          io, @id, delivery_tag, requeue,
+        )
+      end
     end
 
     # ---- Internals -----------------------------------------------------

@@ -257,6 +257,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: full default `crystal spec --error-trace` exits 0: 189 examples, 0 failures, 0 errors, 81 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_pending_body_reuse_20260518.json` reports `consume_no_ack_preloaded` median ~251.5k msg/s over noisy samples; treat as allocation reduction plus behavioral proof, not a clean throughput win.
+- [x] Apply the eleventh higher-level LTP/WBA direct settlement writer move.
+  - Frame: `Window` = per-delivery `ack`/`nack`/`reject` writes in manual-consume corridors; `Transport` = user delivery settlement -> method frame write under connection write mutex; `Potential` = `(settlement_payload_allocations, frame_object_allocations, wire_exactness, consume_ack_latency)`.
+  - Progress: `BasicMethods.write_ack_frame`, `write_nack_frame`, and `write_reject_frame` write fixed-size method frames directly. `Channel#ack/#nack/#reject` use these direct writers. `tools/perf_publish.cr` now emits `consume_ack_preloaded` so manual-ack consume stays measurable.
+  - Evidence: `crystal spec spec/wire/basic_methods_spec.cr spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 24 pending.
+  - Evidence: full default `crystal spec --error-trace` exits 0: 192 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_direct_ack_write_20260518.json` reports `consume_ack_preloaded` median ~269.1k msg/s over noisy samples; treat as allocation/write-path reduction plus behavioral proof, not a clean throughput win.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.
