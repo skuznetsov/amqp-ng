@@ -279,6 +279,15 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/subscription_spec.cr spec/stats_spec.cr --error-trace` exits 0: 29 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_pending_body_reset_20260518.json` reports noisy `consume_no_ack_preloaded` median ~213.0k msg/s and `consume_ack_preloaded` median ~382.3k msg/s. Treat this as allocation reduction plus lifetime proof, not a clean end-to-end throughput win.
+- [x] Apply the fourteenth higher-level LTP/WBA public-bytes publish corridor move.
+  - Frame: `Window` = public fire-and-forget `publish(exchange, routing_key, body : Bytes)`; `Transport` = caller bytes -> publish frames; `Potential` = `(message_wrapper_allocations, recovery_semantics, live_publish_latency)`.
+  - Progress: non-confirm public bytes publish now writes directly from `Bytes` instead of first wrapping the body in `Amqp::Message`. Confirm-mode bytes publish still uses the existing `Message` path so recovery/full replay semantics remain unchanged.
+  - Progress: `tools/perf_publish.cr` now reports `publish_single_bytes` separately from the prebuilt-message `publish_single` lane.
+  - Evidence: focused `/opt/homebrew/bin/crystal spec spec/api_surface_spec.cr spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 31 examples, 0 failures, 0 errors, 21 pending.
+  - Evidence: full default `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 194 examples, 0 failures, 0 errors, 81 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+  - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/stats_spec.cr --error-trace` exits 0: 23 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_single_bytes_20260518.json` reports `publish_single_bytes` median ~763.6k msg/s vs prebuilt-message `publish_single` ~731.7k and `publish_batch_bytes` ~836.1k. Treat this as directional because local broker/scheduler noise is still high.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

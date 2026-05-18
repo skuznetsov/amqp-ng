@@ -466,6 +466,10 @@ module Amqp
                 properties : Properties = Properties.new,
                 mandatory : Bool = false,
                 immediate : Bool = false) : UInt64?
+      ensure_open!
+      wait_for_flow_active
+      return publish_unconfirmed(body, properties, exchange, routing_key, mandatory, immediate) unless @confirms_enabled
+
       publish(Message.new(body, properties), exchange, routing_key,
         mandatory: mandatory, immediate: immediate)
     end
@@ -1308,6 +1312,25 @@ module Amqp
       end
       write_publish_frames(exchange, routing_key, mandatory, immediate,
         header_payload, message.body, max_body_per_frame(@connection.frame_max)) { }
+      @connection.stats.incr_published
+      nil
+    end
+
+    private def publish_unconfirmed(body : Bytes,
+                                    properties : Properties,
+                                    exchange : String,
+                                    routing_key : String,
+                                    mandatory : Bool,
+                                    immediate : Bool) : UInt64?
+      header_payload = unless properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          body.size.to_u64,
+          properties,
+        )
+      end
+      write_publish_frames(exchange, routing_key, mandatory, immediate,
+        header_payload, body, max_body_per_frame(@connection.frame_max)) { }
       @connection.stats.incr_published
       nil
     end

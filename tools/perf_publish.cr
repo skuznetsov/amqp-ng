@@ -331,6 +331,13 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_purge(queue)
   end
 
+  results["publish_single_bytes"] = sample_rates("publish_single_bytes", samples, publish_n) do
+    publish_n.times do
+      ch.publish("", queue, body)
+    end
+    ch.queue_purge(queue)
+  end
+
   results["publish_batch"] = sample_rates("publish_batch", samples, publish_n) do
     remaining = publish_n
     while remaining >= batch_size
