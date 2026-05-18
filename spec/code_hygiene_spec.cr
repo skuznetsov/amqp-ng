@@ -36,11 +36,20 @@ module CodeHygieneSpec
   end
 end
 
-describe "source hygiene (T-CODEC-PURE-001)" do
+describe "source hygiene" do
   it "does not reach into private ivars from shard or spec code" do
     offenders = CodeHygieneSpec.matching_lines(
       CodeHygieneSpec.crystal_files_under("src", "spec"),
       "." + "@"
+    )
+
+    offenders.should be_empty, offenders.join('\n')
+  end
+
+  it "keeps the public implementation free of module class-variable state (T-API-NOGLOBAL-001)" do
+    offenders = CodeHygieneSpec.matching_lines(
+      CodeHygieneSpec.crystal_files_under("src"),
+      /^\s*@@/
     )
 
     offenders.should be_empty, offenders.join('\n')

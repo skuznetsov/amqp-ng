@@ -18,7 +18,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `shard.yml`, `src/amqp.cr`, `CHANGELOG.md`, and `docs/17-mvp-cutline.md`.
   - Evidence: downstream service `shards install` installs `amqp (0.1.0 at ../amqp-ng)`.
   - Evidence: downstream service CLI compile smoke exits 0.
-  - Evidence: current no-broker default `crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: current no-broker default `crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: RabbitMQ opt-in TLS/backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: LavinMQ 2.4.0 opt-in backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
 
@@ -31,7 +31,7 @@ Status: active working ledger for `amqp-ng`.
 - [x] Re-run the full current verification baseline.
   - DoD: `crystal spec` exits 0.
   - DoD: `crystal tool format --check` status is documented as current pass/fail, with pre-existing failures separated from new failures.
-  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: earlier local full opt-in `AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-rabbit AMQP_TLS_URL='amqps://guest:guest@localhost:5671/' AMQP_TLS_CA_CERT='.tmp/rabbitmq_tls/certs/ca_certificate.pem' timeout 180 crystal spec` exited 0 before later parity additions; re-run before public release.
   - Evidence: earlier LavinMQ 2.4.0 default and opt-in backpressure/chaos suites passed before later parity additions; re-run after broker-compat changes.
   - Evidence: `crystal tool format --check src spec` exits 0.
@@ -88,14 +88,14 @@ Status: active working ledger for `amqp-ng`.
   - Scope: `README.md` no longer describes the project as pre-implementation.
   - DoD: README status matches the current implementation and verification state.
   - Evidence: `README.md` describes active v0 implementation, current verified spec count, clean format status, and remaining high-risk areas.
-  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
 
 - [x] Decide whether performance claims belong in v0 docs.
   - Problem: `docs/14-performance-contract.md` names concrete throughput targets without a shipped harness.
   - DoD: either add a runnable harness with reproducibility notes or downgrade claims to roadmap/non-normative.
   - Decision: downgrade to roadmap/non-normative until `spec/perf/` exists.
   - Evidence: `docs/14-performance-contract.md` is now "Performance Roadmap"; `docs/16-falsifier-matrix.md` marks `T-PERF-*` rows as reserved roadmap falsifiers.
-  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
 
 ## Backlog
 
@@ -157,7 +157,7 @@ Status: active working ledger for `amqp-ng`.
   - Scope: keep the explicit `Bytes` constructor zero-copy, but make convenience `String` and `IO` constructors produce owned `Bytes` so long-lived messages are not tied to borrowed string storage.
   - DoD: focused message/API specs, full default specs, release no-codegen perf build, format check, diff check, and live LavinMQ focused publish/confirm specs.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/message_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 12 examples, 0 failures, 0 errors, 0 pending.
-  - Evidence: `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending without a live broker.
+  - Evidence: `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending without a live broker.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/message_spec.cr spec/api_surface_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 72 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
 
@@ -167,7 +167,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/arguments_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 11 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: focused no-broker `/opt/homebrew/bin/crystal spec spec/arguments_spec.cr spec/api_surface_spec.cr spec/channel_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 26 pending.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/arguments_spec.cr spec/api_surface_spec.cr spec/channel_spec.cr --error-trace` exits 0: 37 examples, 0 failures, 0 errors, 0 pending.
-  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
 - [x] Close practical feature parity gaps with `amqp-client.cr`.
   - Current near-parity: connection/channel lifecycle, queue/exchange declare/bind/delete/purge/unbind, publish, publisher confirms, get, consume/subscribe, ack/nack/reject/qos, `basic.recover`, `channel.flow`, `tx.*`, `basic_*` compatibility aliases, queue/exchange wrapper objects, `on_return`/`on_cancel`/`on_close` callbacks, blocked/unblocked callbacks, TLS, strict URI config, RabbitMQ/LavinMQ smoke coverage.
@@ -192,7 +192,7 @@ Status: active working ledger for `amqp-ng`.
   - Work-pool audit: old `amqp-client.cr` exposes `work_pool` through `basic_consume` and `Queue#subscribe`; both are covered by current wrappers.
   - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local downstream release.
   - Progress: `no_wait` compatibility overloads for queue declare, queue bind, exchange bind/unbind, and basic cancel now emit broker no-wait frames; NamedTuple `args` overloads are covered by the public helper surface.
-  - Evidence: latest no-broker full `crystal spec --error-trace` exits 0: 219 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: latest no-broker full `crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: focused no-wait wire/API/live LavinMQ spec exits 0: 39 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `crystal tool format --check src spec tools/perf_publish.cr`, `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: private downstream service compile smoke exits 0 after the parity additions.
@@ -465,3 +465,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/dependency_hygiene_spec.cr --error-trace` exits 0: 2 examples, 0 failures.
   - Evidence: local dev Crystal `crystal spec spec/dependency_hygiene_spec.cr --error-trace` exits 0: 2 examples, 0 failures.
   - Cutline: this closes the local runtime-dependency drift guard; it does not add checked-in multi-version CI.
+- [x] Implement `T-API-NOGLOBAL-001` as a local executable source-state guard.
+  - Progress: extended `spec/code_hygiene_spec.cr` to reject module/class variable state (`@@`) in implementation source while allowing ordinary logger constants.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/code_hygiene_spec.cr --error-trace` exits 0: 3 examples, 0 failures.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 220 examples, 0 failures, 0 errors, 92 pending.

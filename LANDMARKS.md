@@ -10,7 +10,7 @@ Verified anchors and reusable refutations for `amqp-ng`.
 
 - [LM-003|pattern] The docs contain many normative falsifier IDs, but the live spec tree is not organized by the documented matrix paths such as `spec/api/`, `spec/publisher/`, or `spec/reliability/`. Evidence: `docs/16-falsifier-matrix.md` names those paths; `rg --files spec` shows flat/current spec layout. Trust `{F:0.8,G:0.7,R:0.9}`. Status: verified 2026-05-15; decay trigger: spec tree restructuring.
 
-- [LM-004|refute] README honesty drift was corrected: the README no longer claims pre-implementation and now reports active v0 implementation plus current default verification and opt-in broker gates. Evidence: `README.md`; current no-broker `crystal spec --error-trace` baseline is 219 examples after the dependency hygiene guard pass. Trust `{F:0.9,G:0.8,R:0.9}`. Status: refreshed 2026-05-18; decay trigger: README/status rewrite, implementation removal, or verification baseline change.
+- [LM-004|refute] README honesty drift was corrected: the README no longer claims pre-implementation and now reports active v0 implementation plus current default verification and opt-in broker gates. Evidence: `README.md`; current no-broker `crystal spec --error-trace` baseline is 220 examples after the no-global hygiene guard pass. Trust `{F:0.9,G:0.8,R:0.9}`. Status: refreshed 2026-05-18; decay trigger: README/status rewrite, implementation removal, or verification baseline change.
 
 - [LM-005|goal] Current working slice is "bring the public API and behavioral specs into alignment before expanding implementation". Evidence: user request to align API to docs and then quadrumvirate missing spec risks. Trust `{F:0.6,G:0.8,R:0.7}`. Status: active; decay trigger: user changes project priority.
 
@@ -209,6 +209,8 @@ Verified anchors and reusable refutations for `amqp-ng`.
 - [LM-098|guard] `T-CODEC-PURE-001` is now executable as `spec/code_hygiene_spec.cr`: shard/spec source cannot contain direct private-ivar reach-in, and `src/amqp/wire` cannot introduce fibers, sockets, TLS/OpenSSL use, or class/module-variable state. Evidence: `spec/code_hygiene_spec.cr`, `docs/20-risk-register.md`; focused hygiene spec passes. Trust `{F:0.9,G:0.7,R:0.9}`. Status: verified 2026-05-18; decay trigger: hygiene spec changes, wire-codec directory move, or intentional codec dependency expansion.
 
 - [LM-099|guard] `T-API-DEPS-001` is now executable as `spec/dependency_hygiene_spec.cr`: `shard.yml` is parsed with stdlib YAML and runtime dependencies must remain empty; an empty-dependency lockfile, if locally generated, must also lock no shards. Evidence: `spec/dependency_hygiene_spec.cr`, `shard.yml`, `docs/20-risk-register.md`; focused dependency spec passes on release and dev Crystal. Trust `{F:0.9,G:0.75,R:0.9}`. Status: verified 2026-05-18; decay trigger: shard dependency model, dev dependency policy, lockfile format, or CI workflow changes.
+
+- [LM-100|guard] `T-API-NOGLOBAL-001` is now executable in `spec/code_hygiene_spec.cr`: implementation source cannot introduce module/class variables (`@@`). Current module-level state remains limited to logger constants such as `Log = ::Log.for(...)`. Evidence: `spec/code_hygiene_spec.cr`, `docs/01-design-principles.md`, `docs/16-falsifier-matrix.md`; focused hygiene spec and full no-broker spec pass. Trust `{F:0.9,G:0.75,R:0.9}`. Status: verified 2026-05-18; decay trigger: public namespace state policy, logger pattern, or source hygiene spec changes.
 
 ## Known Risks
 
