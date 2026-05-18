@@ -283,7 +283,7 @@ Current default local gate:
 crystal spec --error-trace
 ```
 
-Latest no-broker result: `215 examples, 0 failures, 0 errors, 92 pending`.
+Latest no-broker result: `217 examples, 0 failures, 0 errors, 92 pending`.
 Most pending examples are live-broker specs that intentionally skip when
 `AMQP_URL` is unreachable.
 

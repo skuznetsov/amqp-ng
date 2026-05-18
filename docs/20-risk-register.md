@@ -23,18 +23,17 @@ when 1.20.0-dev renamed it to `@writable`. The same class of bug
 COULD bite this shard if it reached into stdlib internals.
 
 **Mitigation.** P-1 / P-9 forbid stdlib-ivar access. The current
-source is written against public stdlib APIs, and can be audited with
-`rg '\.@' src spec`. `T-CODEC-PURE-001` remains the intended
-executable guard for this invariant; the checked-in spec tree does
-not yet contain a dedicated source-grep falsifier.
+source is written against public stdlib APIs. `T-CODEC-PURE-001` is
+implemented by `spec/code_hygiene_spec.cr`: it scans shard/spec source
+for direct private-ivar reach-in and scans `src/amqp/wire` for fiber,
+socket, TLS, or class/module-variable state.
 
 **Severity.** High (would break the entire shard on a Crystal upgrade).
 
-**Likelihood (post-mitigation).** Medium-low. The implementation
-discipline is strong, but this is not CI-backed until the source-grep
-falsifier is executable in the tree.
+**Likelihood (post-mitigation).** Low in local/default specs. This
+still becomes stronger once checked-in CI runs the default spec suite.
 
-**Status.** Mitigated by design; executable guard still required.
+**Status.** Mitigated by design + local executable guard.
 
 ---
 
