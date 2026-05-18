@@ -390,6 +390,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: live LavinMQ 2.4.0 focused `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including raw-byte batch flow/closed-channel guards.
   - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 203 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
+- [x] Fix amqp-client callback publish open/flow gating.
+  - Problem: `basic_publish { |ok| ... }` callback mode auto-enabled confirms and then called the callback confirm writer directly, bypassing `ensure_open!` / `wait_for_flow_active` when the channel was already in confirm mode.
+  - Progress: callback publish now applies open/flow gates before registering and writing the confirm publish.
+  - Evidence: focused default `/opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/confirms_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 69 examples, 0 failures, 0 errors, 60 pending.
+  - Evidence: live LavinMQ 2.4.0 focused `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/channel_spec.cr spec/confirms_spec.cr spec/api_surface_spec.cr --error-trace` exits 0: 69 examples, 0 failures, 0 errors, 0 pending, including callback publish flow/closed-channel guards.
+  - Evidence: live LavinMQ full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 205 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check src spec tools/perf_publish.cr`, `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace`, and `git diff --check` exit 0.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

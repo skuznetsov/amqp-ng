@@ -878,6 +878,8 @@ module Amqp
                       &callback : Bool -> Nil) : UInt64
       raise ConfigurationError.new("basic_publish callback mode does not support immediate: true") if immediate
       confirm_select unless @confirms_enabled
+      ensure_open!
+      wait_for_flow_active
       publish_registered_callback(Message.new(body, properties), exchange, routing_key,
         mandatory, callback)
     end

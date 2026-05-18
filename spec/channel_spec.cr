@@ -263,6 +263,58 @@ describe Amqp::Channel do
       end
     end
 
+    it "blocks amqp-client.cr callback publishes while channel.flow is inactive" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+        done = ::Channel(Exception?).new(1)
+        callback = ::Channel(Bool).new(1)
+
+        ch.__spec_set_flow_active(false)
+        spawn do
+          begin
+            ch.basic_publish("flow-callback", "", info.name) do |ok|
+              callback.send(ok)
+            end
+            done.send(nil)
+          rescue ex
+            done.send(ex)
+          end
+        end
+
+        select
+        when result = done.receive
+          raise result if result
+          fail "callback publish completed while channel.flow was inactive"
+        when timeout(50.milliseconds)
+        end
+
+        ch.__spec_set_flow_active(true)
+        if ex = done.receive
+          raise ex
+        end
+        callback.receive.should be_true
+        String.new(ch.basic_get(info.name).not_nil!.body).should eq("flow-callback")
+        ch.close
+      end
+    end
+
+    it "rejects amqp-client.cr callback publishes after channel close" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+        ch.close
+
+        expect_raises(Amqp::ChannelClosedByCaller) do
+          ch.basic_publish("closed-callback", "", info.name) { |_| nil }
+        end
+      end
+    end
+
     it "supports amqp-client.cr queue and exchange wrappers" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|
