@@ -22,6 +22,17 @@ class Amqp::Channel
     end
   end
 
+  def __spec_register_callback_pending_confirm(callback : Bool -> Nil,
+                                               *,
+                                               mandatory : Bool = false,
+                                               message : Amqp::Message = Amqp::Message.new("spec"),
+                                               exchange : String = "",
+                                               routing_key : String = "spec") : UInt64
+    @confirms_mutex.synchronize do
+      register_callback_pending_confirm_locked(message, exchange, routing_key, mandatory, callback)
+    end
+  end
+
   def __spec_settle_publish(tag : UInt64, *, multiple : Bool, nacked : Bool) : Nil
     __settle_publish_for_test(tag, multiple, nacked)
   end
@@ -523,6 +534,30 @@ describe "publisher confirms" do
         ch.__spec_await_sync_publish_confirm(tag, 5.seconds).should be_true
         ch.__spec_sync_confirm_waiter_count.should eq(0)
         ch.__spec_completed_sync_confirm_count.should eq(0)
+        ch.__spec_pending_confirm_count.should eq(0)
+        ch.close
+      end
+    end
+
+    it "settles callback confirms without per-publish outcome channels" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url) do |conn|
+        ch = conn.channel
+        ch.confirm_select
+        callback_results = ::Channel(Bool).new(2)
+        tag = ch.__spec_register_callback_pending_confirm(->(ok : Bool) {
+          callback_results.send(ok)
+          nil
+        })
+
+        ch.__spec_settle_publish(tag, multiple: false, nacked: false)
+
+        callback_results.receive.should be_true
+        select
+        when callback_results.receive
+          fail "callback confirm settled more than once"
+        when timeout(1.millisecond)
+        end
         ch.__spec_pending_confirm_count.should eq(0)
         ch.close
       end

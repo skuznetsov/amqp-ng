@@ -173,11 +173,25 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `crystal spec spec/api_surface_spec.cr spec/channel_spec.cr --error-trace` exits 0: 26 examples, 0 failures.
   - Work-pool audit: old `amqp-client.cr` exposes `work_pool` through `basic_consume` and `Queue#subscribe`; both are covered by current wrappers.
   - Decision: WebSocket transport is not a practical blocker for `amqp-client.cr` Crystal shard parity in v0; keep it as a future transport research item rather than delaying the local downstream release.
-  - Lower-priority compatibility niceties: `no_wait` overloads and NamedTuple `args` overloads are still omitted from the v0 practical surface unless a real migration site needs them.
+  - Lower-priority compatibility niceties: NamedTuple `args` overloads are still omitted from the v0 practical surface unless a real migration site needs them; `queue_declare(no_wait:)` is now covered through the LavinMQ-shaped facade.
   - Evidence: latest full `crystal spec --error-trace` exits 0: 174 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `crystal tool format --check src spec tools/perf_publish.cr`, `crystal build tools/perf_publish.cr --no-codegen --error-trace`, and `git diff --check` exit 0.
   - Evidence: private downstream service compile smoke exits 0 after the parity additions.
   - Cutline: implement aliases/wrappers/callbacks before niche protocol features; any future WebSocket transport needs explicit docs/spec updates because v0 docs currently defer or omit it.
+- [x] Add a LavinMQ-shaped `amqp-client` compatibility facade and run first real `lavinmqperf` comparison.
+  - Scope: compatibility layer for `require "amqp-client"` call sites in LavinMQ shovel/perf corridors, plus the LTP/WBA confirm-callback optimization branch.
+  - Progress: added `src/amqp-client.cr` facade with `AMQP::Client`, wrapper `Connection`/`Channel`/`Queue`/`Exchange`, JSON-capable `Arguments`, old-client error aliases, `body_io` accessors, IO-without-explicit-size publish overloads, and queue-declare NamedTuple shape.
+  - Progress: callback `basic_publish` now avoids a per-publish outcome channel and per-publish spawned waiter; confirms are settled through a bounded per-channel callback dispatcher to keep user callback code out of the channel handler fiber.
+  - Refuted branch: direct inline confirm callbacks looked faster locally but hung `lavinmqperf` confirm mode under `Fiber::ExecutionContext::Parallel`; keep the dispatcher until a nonblocking ordered callback transport is proven.
+  - Evidence: `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' /opt/homebrew/bin/crystal spec spec/api_surface_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 57 examples, 0 failures, 0 pending against LavinMQ 2.4.0.
+  - Evidence: `CRYSTAL_PATH=/Users/sergey/Projects/Crystal/amqp-ng/src:lib:/opt/homebrew/Cellar/crystal/1.20.1/share/crystal/src /opt/homebrew/bin/crystal build src/lavinmq/shovel/amqp_source.cr --no-codegen --error-trace` exits 0 in the LavinMQ checkout; the same command for `src/lavinmq/shovel/amqp_destination.cr` exits 0.
+  - Evidence: Crystal 1.20.1 LavinMQ broker `lavinmqperf` publish+consume, 1 publisher/1 consumer, 256-byte bodies, 2,000,000 messages, release + `-Dpreview_mt -Dexecution_context`: original `amqp-client.cr` reports ~398.4k msg/s, amqp-ng shim reports ~497.6k msg/s on this host.
+  - Evidence: Crystal 1.19.1 LavinMQ broker `lavinmqperf` publish+consume with the same shape reports original `amqp-client.cr` ~331.7k msg/s and amqp-ng shim ~331.9k msg/s.
+  - Evidence: Crystal 1.19.1 LavinMQ broker `lavinmqperf` confirm-callback mode, `--confirm 500`, 500,000 messages, release + `-Dpreview_mt -Dexecution_context`: original `amqp-client.cr` reports ~165.9k msg/s and amqp-ng shim with safe dispatcher reports ~165.9k msg/s.
+  - Evidence: `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal-1.19.1 spec spec/api_surface_spec.cr spec/channel_spec.cr spec/confirms_spec.cr --error-trace` exits 0: 57 examples, 0 failures, 0 pending; 1.19.1 no-codegen builds of `src/amqp-client.cr` and `tools/perf_publish.cr` also pass.
+  - Evidence: full `src/lavinmqperf.cr` compiles against the amqp-ng shim on Crystal 1.19.1 with `-Dpreview_mt -Dexecution_context`; compatibility additions include minimal `AMQ::Protocol::Properties`, raw `AMQP::Client::Frame::Basic::Consume`, `Connection#write`, `Client#host=`, `Queue#delete`, and `queue_declare(no_wait:)`.
+  - Refuted branch: a batched dispatcher queue based on a custom mutex/waker hung the live confirm spec; retain the simpler Crystal `Channel` dispatcher until a smaller falsifier proves a replacement.
+  - Cutline: full `lavinmq` target is not yet a clean amqp-ng signal on this checkout because original LavinMQ still has unrelated compile gates on Crystal 1.20.1. Use Crystal 1.19.1 plus focused shovel/perf wrappers for the current apples-to-apples comparison.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

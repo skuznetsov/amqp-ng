@@ -21,6 +21,7 @@ module Amqp
     Log = ::Log.for("amqp.channel")
     alias CancelCallback = String -> Nil
     alias CloseCallback = UInt16, String -> Nil
+    alias ConfirmCallback = Bool -> Nil
 
     enum State
       Initial
@@ -85,6 +86,7 @@ module Amqp
       original_tag : UInt64,
       mandatory : Bool,
       outcome : ::Channel(ConfirmOutcome)?,
+      callback : ConfirmCallback?,
       replay_message : Message?,
       exchange : String,
       routing_key : String,
@@ -95,6 +97,10 @@ module Amqp
         )
       end
     end
+
+    private record SettledPublish,
+      outcome : ConfirmOutcome,
+      callback : ConfirmCallback?
 
     getter id : UInt16
     @connection : Connection
@@ -134,6 +140,7 @@ module Amqp
     @completed_sync_confirms : Hash(UInt64, ConfirmOutcome)
     @confirms_nacked : Bool
     @confirms_waker : ::Channel(Nil)
+    @confirm_callback_queue : ::Channel(Tuple(ConfirmCallback, Bool))
     @on_return : Proc(ReturnedMessage, Nil)?
     @on_cancel : CancelCallback?
     @on_close : CloseCallback?
@@ -178,6 +185,7 @@ module Amqp
       @completed_sync_confirms = {} of UInt64 => ConfirmOutcome
       @confirms_nacked = false
       @confirms_waker = ::Channel(Nil).new
+      @confirm_callback_queue = ::Channel(Tuple(ConfirmCallback, Bool)).new(1024)
       @on_return = nil
       @on_cancel = nil
       @on_close = nil
@@ -191,6 +199,7 @@ module Amqp
 
     protected def open : Nil
       spawn(name: "amqp-channel-#{@id}") { run_handler }
+      spawn(name: "amqp-confirm-callbacks-#{@id}") { run_confirm_callback_loop }
       begin
         env = sync_rpc(Amqp::Wire::AmqpZeroNineOne::ChannelMethods::Open.new.to_payload)
         expect_method!(env, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_CHANNEL,
@@ -328,6 +337,28 @@ module Amqp
         end
       end
       QueueInfo.new(ok.name, ok.message_count, ok.consumer_count)
+    end
+
+    # :nodoc:
+    def __compat_queue_declare_no_wait(name : String = "",
+                                       passive : Bool = false,
+                                       durable : Bool = false,
+                                       exclusive : Bool = false,
+                                       auto_delete : Bool = false,
+                                       arguments : Amqp::Arguments = Amqp::Arguments.new) : QueueInfo
+      ensure_open!
+      payload = IO::Memory.new
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::CLASS_ID_QUEUE,
+        IO::ByteFormat::NetworkEndian)
+      payload.write_bytes(Amqp::Wire::AmqpZeroNineOne::METHOD_ID_QUEUE_DECLARE,
+        IO::ByteFormat::NetworkEndian)
+      payload.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+      Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(payload, name)
+      Amqp::Wire::AmqpZeroNineOne::BitPack.write(payload,
+        [passive, durable, exclusive, auto_delete, true])
+      Amqp::Wire::AmqpZeroNineOne::Types.write_field_table(payload, arguments)
+      @connection.write_frame(@id, Amqp::Wire::FrameType::Method, payload.to_slice)
+      QueueInfo.new(name, 0_u32, 0_u32)
     end
 
     def queue_bind(queue : String,
@@ -697,6 +728,12 @@ module Amqp
       body
     end
 
+    private def read_publish_body_to_end(io : IO) : Bytes
+      buffer = IO::Memory.new
+      IO.copy(io, buffer)
+      buffer.to_slice
+    end
+
     # ---- amqp-client.cr compatibility aliases --------------------------
 
     def basic_publish(body : Bytes,
@@ -729,6 +766,16 @@ module Amqp
         mandatory, immediate, properties)
     end
 
+    def basic_publish(io : IO,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new) : UInt64
+      basic_publish(read_publish_body_to_end(io), exchange, routing_key,
+        mandatory, immediate, properties)
+    end
+
     def basic_publish(body : Bytes,
                       exchange : String,
                       routing_key : String = "",
@@ -738,16 +785,8 @@ module Amqp
                       &callback : Bool -> Nil) : UInt64
       raise ConfigurationError.new("basic_publish callback mode does not support immediate: true") if immediate
       confirm_select unless @confirms_enabled
-      tag, outcome = publish_async(Message.new(body, properties), exchange, routing_key,
-        mandatory: mandatory)
-      spawn(name: "amqp-basic-publish-confirm-#{@id}-#{tag}") do
-        ok = false
-        if result = outcome.receive?
-          ok = result.kind.ack?
-        end
-        callback.call(ok)
-      end
-      tag
+      publish_registered_callback(Message.new(body, properties), exchange, routing_key,
+        mandatory, callback)
     end
 
     def basic_publish(io : IO,
@@ -759,6 +798,19 @@ module Amqp
                       props properties : Properties = Properties.new,
                       &callback : Bool -> Nil) : UInt64
       basic_publish(read_publish_body(io, bytesize), exchange, routing_key,
+        mandatory, immediate, properties) do |ok|
+        callback.call(ok)
+      end
+    end
+
+    def basic_publish(io : IO,
+                      exchange : String,
+                      routing_key : String = "",
+                      mandatory : Bool = false,
+                      immediate : Bool = false,
+                      props properties : Properties = Properties.new,
+                      &callback : Bool -> Nil) : UInt64
+      basic_publish(read_publish_body_to_end(io), exchange, routing_key,
         mandatory, immediate, properties) do |ok|
         callback.call(ok)
       end
@@ -809,6 +861,17 @@ module Amqp
                               props properties : Properties = Properties.new,
                               timeout : Time::Span = 30.seconds) : Bool
       basic_publish_confirm(read_publish_body(io, bytesize), exchange, routing_key,
+        mandatory, immediate, properties, timeout: timeout)
+    end
+
+    def basic_publish_confirm(io : IO,
+                              exchange : String,
+                              routing_key : String = "",
+                              mandatory : Bool = false,
+                              immediate : Bool = false,
+                              props properties : Properties = Properties.new,
+                              timeout : Time::Span = 30.seconds) : Bool
+      basic_publish_confirm(read_publish_body_to_end(io), exchange, routing_key,
         mandatory, immediate, properties, timeout: timeout)
     end
 
@@ -1286,6 +1349,56 @@ module Amqp
       seq
     end
 
+    private def publish_registered_callback(message : Message,
+                                            exchange : String,
+                                            routing_key : String,
+                                            mandatory : Bool,
+                                            callback : ConfirmCallback) : UInt64
+      header_payload = unless message.properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          message.body.size.to_u64,
+          message.properties,
+        )
+      end
+      frame_max = @connection.frame_max
+      max_body = max_body_per_frame(frame_max)
+      seq = nil
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      @confirms_mutex.lock if lock_during_write
+      begin
+        if lock_during_write
+          seq = register_callback_pending_confirm_locked(message, exchange, routing_key,
+            mandatory, callback)
+        else
+          write_publish_frames(exchange, routing_key, mandatory, false, header_payload,
+            message.body, max_body) do
+            seq = @confirms_mutex.synchronize do
+              register_callback_pending_confirm_locked(message, exchange, routing_key,
+                mandatory, callback)
+            end
+          end
+          @connection.stats.incr_published
+          return seq.not_nil!
+        end
+        write_publish_frames(exchange, routing_key, mandatory, false, header_payload,
+          message.body, max_body) { }
+      rescue ex
+        if tag = seq
+          if lock_during_write
+            discard_pending_confirm_locked(tag)
+          else
+            @confirms_mutex.synchronize { discard_pending_confirm_locked(tag) }
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      @connection.stats.incr_published
+      seq.not_nil!
+    end
+
     private def register_pending_confirm_locked(message : Message,
                                                 exchange : String,
                                                 routing_key : String,
@@ -1297,7 +1410,23 @@ module Amqp
       @lowest_unconfirmed ||= seq
       replay_message = @connection.recovery_mode.full? ? message : nil
       @pending_confirms[seq] = PendingConfirm.new(
-        seq, mandatory, outcome, replay_message, exchange, routing_key, false,
+        seq, mandatory, outcome, nil, replay_message, exchange, routing_key, false,
+      )
+      seq
+    end
+
+    private def register_callback_pending_confirm_locked(message : Message,
+                                                         exchange : String,
+                                                         routing_key : String,
+                                                         mandatory : Bool,
+                                                         callback : ConfirmCallback) : UInt64
+      seq = @next_publish_seq
+      @next_publish_seq += 1
+      @unconfirmed << seq
+      @lowest_unconfirmed ||= seq
+      replay_message = @connection.recovery_mode.full? ? message : nil
+      @pending_confirms[seq] = PendingConfirm.new(
+        seq, mandatory, nil, callback, replay_message, exchange, routing_key, false,
       )
       seq
     end
@@ -1312,7 +1441,7 @@ module Amqp
       @lowest_unconfirmed ||= seq
       replay_message = @connection.recovery_mode.full? ? message : nil
       @pending_confirms[seq] = PendingConfirm.new(
-        seq, mandatory, nil, replay_message, exchange, routing_key, true,
+        seq, mandatory, nil, nil, replay_message, exchange, routing_key, true,
       )
       seq
     end
@@ -1365,7 +1494,7 @@ module Amqp
 
       @pending_confirms[tag] = PendingConfirm.new(
         pending.original_tag, pending.mandatory, pending.outcome,
-        pending.replay_message, pending.exchange, pending.routing_key, false,
+        pending.callback, pending.replay_message, pending.exchange, pending.routing_key, false,
       )
     end
 
@@ -1998,51 +2127,74 @@ module Amqp
     # `tag` (multiple=true). Sets nack-flag if any settled seq was negative,
     # then wakes any wait_for_confirms waiters.
     private def settle_publish(tag : UInt64, multiple : Bool, nacked : Bool) : Nil
-      single_outcome = nil
-      multiple_outcomes = nil
+      single_settled = nil
+      multiple_settled = nil
       @confirms_mutex.synchronize do
         if multiple
           raise PublishOutOfOrderError.new(tag) unless @unconfirmed.includes?(tag)
-          outcomes = [] of ConfirmOutcome
+          settled = [] of SettledPublish
           tags = @unconfirmed.select { |s| s <= tag }.sort
           tags.each do |seq|
-            outcomes << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
+            settled << settle_one_publish_locked(seq, nacked, refresh_lowest: false)
           end
           refresh_lowest_unconfirmed_locked
-          multiple_outcomes = outcomes
-          @confirms_nacked = true if nacked || outcomes.any? { |outcome| outcome.kind.returned? }
+          multiple_settled = settled
+          @confirms_nacked = true if nacked || settled.any? { |entry| entry.outcome.kind.returned? }
         else
           unless @pending_confirms.has_key?(tag)
             raise PublishOutOfOrderError.new(tag)
           end
-          outcome = settle_one_publish_locked(tag, nacked)
-          single_outcome = outcome
-          @confirms_nacked = true if nacked || outcome.kind.returned?
+          settled = settle_one_publish_locked(tag, nacked)
+          single_settled = settled
+          @confirms_nacked = true if nacked || settled.outcome.kind.returned?
         end
         wake_confirms_locked
       end
 
-      if outcome = single_outcome
+      if settled = single_settled
+        outcome = settled.outcome
         if outcome.kind.nack?
           @connection.stats.incr_confirmed_nack
         else
           @connection.stats.incr_confirmed_ack
         end
-      elsif outcomes = multiple_outcomes
-        outcomes.each do |outcome|
+        settled.callback.try { |callback| enqueue_confirm_callback(callback, outcome.kind.ack?) }
+      elsif settled_entries = multiple_settled
+        settled_entries.each do |settled|
+          outcome = settled.outcome
           if outcome.kind.nack?
             @connection.stats.incr_confirmed_nack
           else
             @connection.stats.incr_confirmed_ack
           end
+          settled.callback.try { |callback| enqueue_confirm_callback(callback, outcome.kind.ack?) }
         end
       end
+    end
+
+    private def enqueue_confirm_callback(callback : ConfirmCallback, ok : Bool) : Nil
+      @confirm_callback_queue.send({callback, ok})
+    rescue ::Channel::ClosedError
+      call_confirm_callback(callback, ok)
+    end
+
+    private def run_confirm_callback_loop : Nil
+      while entry = @confirm_callback_queue.receive?
+        callback, ok = entry
+        call_confirm_callback(callback, ok)
+      end
+    end
+
+    private def call_confirm_callback(callback : ConfirmCallback, ok : Bool) : Nil
+      callback.call(ok)
+    rescue ex
+      Log.warn(exception: ex) { "basic_publish confirm callback failed" }
     end
 
     private def settle_one_publish_locked(tag : UInt64,
                                           nacked : Bool,
                                           *,
-                                          refresh_lowest : Bool = true) : ConfirmOutcome
+                                          refresh_lowest : Bool = true) : SettledPublish
       @unconfirmed.delete(tag)
       if refresh_lowest && @lowest_unconfirmed == tag
         if @unconfirmed.empty?
@@ -2071,7 +2223,7 @@ module Amqp
       elsif pending && pending.sync_waiter
         store_completed_sync_confirm_locked(tag, outcome)
       end
-      outcome
+      SettledPublish.new(outcome, pending.try &.callback)
     end
 
     # Caller MUST already hold @confirms_mutex.
@@ -2095,6 +2247,7 @@ module Amqp
       @state = State::Closed
       @close_reason ||= reason
       notify_sync_failure(reason)
+      callbacks = [] of ConfirmCallback
       @consumers_mutex.synchronize do
         @consumers.each_value(&.mark_closed)
         @consumers.clear
@@ -2102,6 +2255,7 @@ module Amqp
       @confirms_mutex.synchronize do
         @pending_confirms.each_value do |pending|
           pending.outcome.try { |ch| ch.close rescue nil }
+          pending.callback.try { |callback| callbacks << callback }
         end
         @pending_confirms.clear
         @unconfirmed.clear
@@ -2117,6 +2271,8 @@ module Amqp
       end
       @connection.unregister_channel(@id)
       @inbox.close rescue nil
+      @confirm_callback_queue.close rescue nil
+      callbacks.each { |callback| call_confirm_callback(callback, false) }
     end
 
     # ---- Recovery hooks (called from Connection on socket loss) ---------
@@ -2260,7 +2416,7 @@ module Amqp
             next unless pending.exchange.empty? && new_routing_key
             @pending_confirms[seq] = PendingConfirm.new(
               pending.original_tag, pending.mandatory, pending.outcome,
-              pending.replay_message, pending.exchange, new_routing_key,
+              pending.callback, pending.replay_message, pending.exchange, new_routing_key,
               pending.sync_waiter,
             )
           end

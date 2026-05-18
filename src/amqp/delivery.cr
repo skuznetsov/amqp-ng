@@ -16,6 +16,10 @@ module Amqp
                    @routing_key, @properties, @body, @channel = nil)
     end
 
+    def body_io : IO::Memory
+      IO::Memory.new(@body)
+    end
+
     def ack(multiple : Bool = false) : Nil
       (@channel || raise ConfigurationError.new("delivery has no channel")).ack(@delivery_tag, multiple: multiple)
     end

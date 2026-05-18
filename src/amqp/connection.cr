@@ -392,6 +392,11 @@ module Amqp
       end
     end
 
+    # :nodoc:
+    def __compat_write_method_frame(channel : UInt16, payload : Bytes) : Nil
+      write_frame(channel, Amqp::Wire::FrameType::Method, payload)
+    end
+
     # ---- Channel registry ----------------------------------------------
 
     def open_channel : Channel

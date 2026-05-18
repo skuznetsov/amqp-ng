@@ -1,4 +1,5 @@
 require "./spec_helper"
+require "../src/amqp-client"
 
 describe "documented public API surface" do
   it "keeps the top-level Amqp namespace intentional" do
@@ -78,7 +79,7 @@ describe "documented public API surface" do
     typeof(conn.heartbeat).should eq(Time::Span)
     typeof(conn.channel_max).should eq(UInt16)
     typeof(conn.frame_max).should eq(UInt32)
-    typeof(conn.server_properties).should eq(Amqp::Arguments)
+    typeof(conn.server_properties).to_s.should eq("Hash(String, Amqp::FieldValue)")
     typeof(conn.stats).should eq(Amqp::Stats)
     typeof(conn.recovery_mode).should eq(Amqp::Recovery)
     typeof(conn.blocked?).should eq(Bool)
@@ -172,6 +173,38 @@ describe "documented public API surface" do
     typeof(msg.properties).should eq(Amqp::Properties)
     typeof(msg.body).should eq(Bytes)
     typeof(msg.reason).should eq(Amqp::ReturnReason)
+  end
+
+  it "type-checks amqp-client compatibility facade used by LavinMQ corridors" do
+    client = AMQP::Client.new(URI.parse("amqp://guest:guest@127.0.0.1/"))
+    typeof(client.connect).should eq(AMQP::Client::Connection)
+
+    conn = uninitialized AMQP::Client::Connection
+    typeof(conn.channel).should eq(AMQP::Client::Channel)
+    typeof(conn.close(no_wait: false)).should eq(Nil)
+    typeof(conn.closed?).should eq(Bool)
+    raw_consume = AMQP::Client::Frame::Basic::Consume.new(
+      1_u16, 0_u16, "q", "", false, true, false, true, AMQP::Client::Arguments.new)
+    typeof(conn.write(raw_consume)).should eq(Nil)
+
+    ch = uninitialized AMQP::Client::Channel
+    typeof(ch.queue_declare("q")[:queue_name]).should eq(String)
+    typeof(ch.queue_declare("q")[:message_count]).should eq(UInt32)
+    typeof(ch.queue("q", durable: true, auto_delete: false, args: AMQP::Client::Arguments.new)).should eq(AMQP::Client::Queue)
+    typeof(ch.prefetch(count: 1_u16)).should eq(Nil)
+    typeof(ch.confirm_select).should eq(Nil)
+    typeof(ch.wait_for_confirms).should eq(Bool)
+    typeof(ch.basic_publish(IO::Memory.new("x"), "", "rk")).should eq(UInt64)
+    typeof(ch.basic_publish(IO::Memory.new("x"), "", "rk") { nil }).should eq(UInt64)
+    typeof(ch.basic_consume("q", no_ack: true, exclusive: false, block: true, args: AMQP::Client::Arguments.new, tag: "ctag") { |msg| msg.body_io; nil }).should eq(String)
+    typeof(ch.basic_ack(1_u64, multiple: true)).should eq(Nil)
+
+    q = uninitialized AMQP::Client::Queue
+    typeof(q.bind("", "rk")).should eq(AMQP::Client::Queue)
+    typeof(q.subscribe(tag: "c", no_ack: true, block: true) { |msg| msg.body_io.to_slice; nil }).should eq(String)
+
+    msg = uninitialized AMQP::Client::DeliverMessage
+    typeof(msg.body_io).should eq(IO::Memory)
   end
 
   it "type-checks Subscription#receive as a select arm" do
