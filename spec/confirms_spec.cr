@@ -155,6 +155,27 @@ describe "publisher confirms" do
       end
     end
 
+    it "publish_confirm_batch confirms raw byte bodies without pre-wrapping messages" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url, recovery: false) do |conn|
+        ch = conn.open_channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+
+        bodies = (0...5).map { |i| "bytes-window-#{i}".to_slice }
+        ch.publish_confirm_batch(bodies, "", info.name, window_size: 2, timeout: 5.seconds).should be_true
+        ch.__spec_pending_confirm_count.should eq(0)
+
+        seen = [] of String
+        5.times do
+          msg = ch.get(info.name, auto_ack: true).not_nil!
+          seen << String.new(msg.body)
+        end
+        seen.sort.should eq((0...5).map { |i| "bytes-window-#{i}" })
+        ch.close
+      end
+    end
+
     it "publish_confirm_batch rejects non-positive window sizes" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|

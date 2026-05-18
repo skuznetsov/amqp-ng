@@ -503,8 +503,14 @@ module Amqp
                       immediate : Bool = false) : Array(UInt64?)
       return publish_batch_unconfirmed(bodies, exchange, routing_key, properties, mandatory, immediate) unless @confirms_enabled
 
-      messages = bodies.map { |body| Message.new(body, properties) }
-      publish_batch(messages, exchange, routing_key, mandatory: mandatory, immediate: immediate)
+      ensure_open!
+      wait_for_flow_active
+      enter_operation
+      begin
+        publish_batch_registered(bodies, exchange, routing_key, properties, mandatory, immediate)
+      ensure
+        leave_operation
+      end
     end
 
     def publish_confirm_batch(messages : Array(Message),
@@ -545,9 +551,26 @@ module Amqp
                               mandatory : Bool = false,
                               immediate : Bool = false,
                               timeout : Time::Span = 30.seconds) : Bool
-      messages = bodies.map { |body| Message.new(body, properties) }
-      publish_confirm_batch(messages, exchange, routing_key,
-        window_size: window_size, mandatory: mandatory, immediate: immediate, timeout: timeout)
+      raise ConfigurationError.new("publish_confirm_batch requires confirm mode") unless @confirms_enabled
+      raise ArgumentError.new("window_size must be positive") unless window_size > 0
+      return true if bodies.empty?
+
+      index = 0
+      while index < bodies.size
+        count = Math.min(window_size, bodies.size - index)
+        ensure_open!
+        wait_for_flow_active
+        enter_operation
+        begin
+          publish_batch_registered_range(bodies, index, count, exchange, routing_key,
+            properties, mandatory, immediate)
+        ensure
+          leave_operation
+        end
+        return false unless wait_for_confirms(timeout)
+        index += count
+      end
+      true
     end
 
     def publish_confirm(message : Message,
@@ -1422,11 +1445,20 @@ module Amqp
                                                 routing_key : String,
                                                 mandatory : Bool,
                                                 outcome : ::Channel(ConfirmOutcome)?) : UInt64
+      replay_message = @connection.recovery_mode.full? ? message : nil
+      register_pending_confirm_replay_locked(replay_message, exchange, routing_key,
+        mandatory, outcome)
+    end
+
+    private def register_pending_confirm_replay_locked(replay_message : Message?,
+                                                       exchange : String,
+                                                       routing_key : String,
+                                                       mandatory : Bool,
+                                                       outcome : ::Channel(ConfirmOutcome)?) : UInt64
       seq = @next_publish_seq
       @next_publish_seq += 1
       @unconfirmed << seq
       @lowest_unconfirmed ||= seq
-      replay_message = @connection.recovery_mode.full? ? message : nil
       @pending_confirms[seq] = PendingConfirm.new(
         seq, mandatory, outcome, nil, replay_message, exchange, routing_key, false,
       )
@@ -1646,6 +1678,72 @@ module Amqp
       seqs
     end
 
+    private def publish_batch_registered(bodies : Array(Bytes),
+                                         exchange : String,
+                                         routing_key : String,
+                                         properties : Properties,
+                                         mandatory : Bool,
+                                         immediate : Bool) : Array(UInt64?)
+      seqs = Array(UInt64?).new(bodies.size)
+      return seqs if bodies.empty?
+
+      max_body = max_body_per_frame(@connection.frame_max)
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      method_frame = publish_method_frame(exchange, routing_key, mandatory, immediate)
+      @confirms_mutex.lock if lock_during_write
+      begin
+        @connection.with_write do |io|
+          if lock_during_write
+            bodies.each do |body|
+              replay_message = Message.new(body, properties)
+              seqs << register_pending_confirm_replay_locked(replay_message,
+                exchange, routing_key, mandatory, nil)
+            end
+          else
+            @confirms_mutex.synchronize do
+              bodies.each do
+                seqs << register_pending_confirm_replay_locked(nil,
+                  exchange, routing_key, mandatory, nil)
+              end
+            end
+          end
+
+          if properties.empty?
+            bodies.each do |body|
+              write_publish_frames_to(io, method_frame, nil, body, max_body)
+              @connection.stats.incr_published
+            end
+          else
+            bodies.each do |body|
+              header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+                Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+                body.size.to_u64,
+                properties,
+              )
+
+              write_publish_frames_to(io, method_frame,
+                header_payload, body, max_body)
+              @connection.stats.incr_published
+            end
+          end
+        end
+      rescue ex
+        unless seqs.empty?
+          if lock_during_write
+            seqs.each { |tag| discard_pending_confirm_locked(tag) if tag }
+          else
+            @confirms_mutex.synchronize do
+              seqs.each { |tag| discard_pending_confirm_locked(tag) if tag }
+            end
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      seqs
+    end
+
     private def publish_batch_registered_range(messages : Array(Message),
                                                start : Int32,
                                                count : Int32,
@@ -1697,6 +1795,84 @@ module Amqp
               header_payload, message.body, max_body)
             @connection.stats.incr_published
             index += 1
+          end
+        end
+      rescue ex
+        if lock_during_write
+          seqs.each { |tag| discard_pending_confirm_locked(tag) }
+        else
+          @confirms_mutex.synchronize do
+            seqs.each { |tag| discard_pending_confirm_locked(tag) }
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+    end
+
+    private def publish_batch_registered_range(bodies : Array(Bytes),
+                                               start : Int32,
+                                               count : Int32,
+                                               exchange : String,
+                                               routing_key : String,
+                                               properties : Properties,
+                                               mandatory : Bool,
+                                               immediate : Bool) : Nil
+      return if count <= 0
+
+      seqs = Array(UInt64).new(count)
+      max_body = max_body_per_frame(@connection.frame_max)
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      method_frame = publish_method_frame(exchange, routing_key, mandatory, immediate)
+      stop = start + count
+
+      @confirms_mutex.lock if lock_during_write
+      begin
+        @connection.with_write do |io|
+          if lock_during_write
+            index = start
+            while index < stop
+              body = bodies[index]
+              replay_message = Message.new(body, properties)
+              seqs << register_pending_confirm_replay_locked(replay_message,
+                exchange, routing_key, mandatory, nil)
+              index += 1
+            end
+          else
+            @confirms_mutex.synchronize do
+              index = start
+              while index < stop
+                seqs << register_pending_confirm_replay_locked(nil,
+                  exchange, routing_key, mandatory, nil)
+                index += 1
+              end
+            end
+          end
+
+          if properties.empty?
+            index = start
+            while index < stop
+              body = bodies[index]
+              write_publish_frames_to(io, method_frame, nil, body, max_body)
+              @connection.stats.incr_published
+              index += 1
+            end
+          else
+            index = start
+            while index < stop
+              body = bodies[index]
+              header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+                Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+                body.size.to_u64,
+                properties,
+              )
+
+              write_publish_frames_to(io, method_frame,
+                header_payload, body, max_body)
+              @connection.stats.incr_published
+              index += 1
+            end
           end
         end
       rescue ex

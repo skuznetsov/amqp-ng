@@ -208,6 +208,12 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: live LavinMQ 2.4.0 `AMQP_URL='amqp://guest:guest@127.0.0.1:5672/' crystal spec spec/confirms_spec.cr --error-trace` exits 0: 32 examples, 0 failures, 0 errors, 0 pending, including synthetic exact ack/nack method frames.
   - Evidence: short LavinMQ release probe reports local stage medians `parse_basic_ack_frame_direct` ~613.3M ops/s vs `parse_basic_ack_frame_generic` ~13.8M ops/s in `.tmp/bench/current_ng_lavinmq_direct_ack_20260518.json`.
   - Adversary: live confirm throughput did not show a clean global win in the same probe, so this is a CPU/handler-work reduction, not evidence that ack parsing is the dominant end-to-end bottleneck.
+- [x] Apply the fourth higher-level LTP/WBA bytes-confirm corridor move.
+  - Frame: `Window` = public `publish_confirm_batch(Array(Bytes))` and confirm-mode `publish_batch(Array(Bytes))`; `Transport` = bytes body -> pending confirm registration -> publish frames -> confirm wait; `Potential` = `(message_wrapper_allocations, replay_payload_correctness, write_lock_work, live_confirm_latency)`.
+  - Progress: confirm-mode bytes batch publishing now registers confirms and writes frames directly from `Array(Bytes)` instead of pre-wrapping the whole input in `Array(Message)`. `Recovery::Full` still constructs replay `Message` objects because recovery needs payload retention; `Recovery::None` avoids that wrapper allocation.
+  - Progress: `tools/perf_publish.cr` now reports `confirm_batch_wait_bytes` and `confirm_window_bytes_<n>` lanes so this corridor remains measurable.
+  - Evidence: live LavinMQ 2.4.0 confirm spec exits 0: 33 examples, 0 failures, 0 errors, 0 pending, including the raw-bytes `publish_confirm_batch` path.
+  - Evidence: short LavinMQ release probe in `.tmp/bench/current_ng_lavinmq_bytes_confirm_20260518.json` reports `confirm_batch_wait_bytes` ~30.2k msg/s vs message batch ~28.2k, and `confirm_window_bytes_500` ~15.4k vs message window ~14.2k; treat this as directional because broker RTT and scheduler noise still dominate.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

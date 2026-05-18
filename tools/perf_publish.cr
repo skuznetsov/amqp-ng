@@ -311,8 +311,23 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     confirm_ch.queue_purge(confirm_queue)
   end
 
+  confirm_full_batch_bodies = Array.new(batch_size) { body }
+  confirm_tail_bodies = Array.new(confirm_n % batch_size) { body }
+
+  results["confirm_batch_wait_bytes"] = sample_rates(samples, confirm_n) do
+    remaining = confirm_n
+    while remaining >= batch_size
+      confirm_ch.publish_batch(confirm_full_batch_bodies, "", confirm_queue)
+      remaining -= batch_size
+    end
+    confirm_ch.publish_batch(confirm_tail_bodies, "", confirm_queue) unless confirm_tail_bodies.empty?
+    raise "wait_for_confirms timed out or saw nack" unless confirm_ch.wait_for_confirms(30.seconds)
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
   confirm_windows.each do |window_size|
     window_messages = Array.new(confirm_n) { Amqp::Message.new(body) }
+    window_bodies = Array.new(confirm_n) { body }
 
     results["confirm_window_#{window_size}"] = sample_rates(samples, confirm_n) do
       ok = confirm_ch.publish_confirm_batch(
@@ -323,6 +338,18 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
         timeout: 30.seconds,
       )
       raise "publish_confirm_batch timed out or saw nack" unless ok
+      confirm_ch.queue_purge(confirm_queue)
+    end
+
+    results["confirm_window_bytes_#{window_size}"] = sample_rates(samples, confirm_n) do
+      ok = confirm_ch.publish_confirm_batch(
+        window_bodies,
+        "",
+        confirm_queue,
+        window_size: window_size,
+        timeout: 30.seconds,
+      )
+      raise "publish_confirm_batch bytes timed out or saw nack" unless ok
       confirm_ch.queue_purge(confirm_queue)
     end
   end
