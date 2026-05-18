@@ -110,6 +110,14 @@ module Amqp::Wire::AmqpZeroNineOne
       io.write_byte(Amqp::Wire::FRAME_END)
     end
 
+    def empty_frame(channel : UInt16,
+                    class_id : UInt16,
+                    body_size : UInt64) : Bytes
+      io = IO::Memory.new
+      write_empty_frame(io, channel, class_id, body_size)
+      io.to_slice
+    end
+
     record Decoded, class_id : UInt16, body_size : UInt64, properties : Amqp::Properties
 
     def decode(payload : Bytes) : Decoded

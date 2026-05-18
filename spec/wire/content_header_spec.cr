@@ -21,6 +21,13 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     actual.to_slice.should eq(expected.to_slice)
   end
 
+  it "builds a reusable empty content-header frame equivalent to direct writing" do
+    expected = IO::Memory.new
+    CH.write_empty_frame(expected, 9_u16, 60_u16, 123_u64)
+
+    CH.empty_frame(9_u16, 60_u16, 123_u64).should eq(expected.to_slice)
+  end
+
   it "content-type + persistent → flags 0x9000" do
     props = Amqp::Properties.new(
       content_type: "text/plain",

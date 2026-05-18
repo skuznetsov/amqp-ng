@@ -220,6 +220,11 @@ Status: active working ledger for `amqp-ng`.
   - Progress: `tools/perf_publish.cr` now reports `confirm_window_default` and `confirm_window_bytes_default` lanes so the default remains observable.
   - Evidence: docs and public API signatures were updated; focused API/docs/confirm specs and release no-codegen perf build pass.
   - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_window_default_20260518.json` reports default window lanes around ~10.6-10.7k msg/s, explicit 100 lanes around ~3.4k, and explicit 500 lanes around ~10.7-15.0k; treat exact deltas as noisy, but the default is no longer pinned to the weakest 100-window corridor.
+- [x] Apply the sixth higher-level LTP/WBA content-header corridor move.
+  - Frame: `Window` = repeated empty content-header frames for same-size bodies; `Transport` = publish method/header/body sequence under the connection write mutex; `Potential` = `(write_lock_work, header_frame_write_calls, allocations_on_unique_body_sizes, live_publish_latency)`.
+  - Progress: repeated empty content-header frames now use a delayed one-entry cache. The first new body size is still written directly, so unique-size workloads do not allocate a cached header frame; repeated same-size publishes use the reusable header frame.
+  - Evidence: `ContentHeader.empty_frame` is byte-equivalent to `write_empty_frame`; focused wire/channel/confirm specs, release no-codegen perf build, format check, and diff check pass.
+  - Evidence: short LavinMQ 2.4.0 release probe in `.tmp/bench/current_ng_lavinmq_header_cache_20260518.json` reports `publish_single` ~831.0k msg/s and `publish_batch_bytes` ~910.5k; treat this as directional because broker/runtime noise is high.
 - [x] Add doc-link lint for `MUST`/`MUST NOT` claims to falsifier IDs.
   - Decision: baseline-gate the current legacy debt instead of pretending all existing normative prose is already linked.
   - Evidence: `spec/docs_falsifier_link_spec.cr` rejects new unlinked normative sections and validates explicit `Falsifier: T-*` references against `docs/16-falsifier-matrix.md`.

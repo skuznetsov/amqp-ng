@@ -159,6 +159,9 @@ module Amqp
     @cached_publish_method_frame_routing_key : String?
     @cached_publish_method_frame_mandatory : Bool
     @cached_publish_method_frame_immediate : Bool
+    @empty_header_candidate_body_size : UInt64?
+    @cached_empty_content_header_frame : Bytes?
+    @cached_empty_content_header_frame_body_size : UInt64?
 
     protected def initialize(@connection : Connection, @id : UInt16)
       @state = State::Initial
@@ -213,6 +216,9 @@ module Amqp
       @cached_publish_method_frame_routing_key = nil
       @cached_publish_method_frame_mandatory = false
       @cached_publish_method_frame_immediate = false
+      @empty_header_candidate_body_size = nil
+      @cached_empty_content_header_frame = nil
+      @cached_empty_content_header_frame_body_size = nil
     end
 
     protected def open : Nil
@@ -1994,11 +2000,31 @@ module Amqp
                                            encoded_payload : Bytes?) : Nil
       if payload = encoded_payload
         Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Header, @id, payload).write(io)
+      elsif frame = cached_empty_content_header_frame_for(body_size)
+        io.write(frame)
       else
         Amqp::Wire::AmqpZeroNineOne::ContentHeader.write_empty_frame(
           io, @id, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, body_size,
         )
       end
+    end
+
+    private def cached_empty_content_header_frame_for(body_size : UInt64) : Bytes?
+      if frame = @cached_empty_content_header_frame
+        return frame if @cached_empty_content_header_frame_body_size == body_size
+      end
+
+      if @empty_header_candidate_body_size == body_size
+        frame = Amqp::Wire::AmqpZeroNineOne::ContentHeader.empty_frame(
+          @id, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, body_size,
+        )
+        @cached_empty_content_header_frame = frame
+        @cached_empty_content_header_frame_body_size = body_size
+        return frame
+      end
+
+      @empty_header_candidate_body_size = body_size
+      nil
     end
 
     private def ensure_open! : Nil
