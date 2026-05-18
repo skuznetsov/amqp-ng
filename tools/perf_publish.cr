@@ -207,6 +207,7 @@ end
 
 body = Bytes.new(body_bytes, 120_u8)
 single_message = Amqp::Message.new(body)
+property_message = Amqp::Message.new(body, Amqp::Properties.new(content_type: "application/octet-stream"))
 full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
 tail_messages = Array.new(publish_n % batch_size) { Amqp::Message.new(body) }
 full_batch_bodies = Array.new(batch_size) { body }
@@ -338,10 +339,25 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_purge(queue)
   end
 
+  results["publish_single_props"] = sample_rates("publish_single_props", samples, publish_n) do
+    publish_n.times do
+      ch.publish(property_message, "", queue)
+    end
+    ch.queue_purge(queue)
+  end
+
   prepared = ch.prepared_publisher("", queue)
   results["publish_prepared_bytes"] = sample_rates("publish_prepared_bytes", samples, publish_n) do
     publish_n.times do
       prepared.publish(body)
+    end
+    ch.queue_purge(queue)
+  end
+
+  prepared_props = ch.prepared_publisher("", queue, properties: property_message.properties)
+  results["publish_prepared_props_bytes"] = sample_rates("publish_prepared_props_bytes", samples, publish_n) do
+    publish_n.times do
+      prepared_props.publish(body)
     end
     ch.queue_purge(queue)
   end

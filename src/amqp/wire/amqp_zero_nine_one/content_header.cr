@@ -23,13 +23,23 @@ module Amqp::Wire::AmqpZeroNineOne
     FLAG_APP_ID           = 0x0008_u16
     FLAG_CLUSTER_ID       = 0x0004_u16
 
+    record EncodedProperties, flags : UInt16, payload : Bytes
+
     # Builds the full header-frame payload (class-id .. property-list).
     def encode(class_id : UInt16, body_size : UInt64, props : Amqp::Properties) : Bytes
+      encoded = encode_properties(props)
       io = IO::Memory.new
       io.write_bytes(class_id, IO::ByteFormat::NetworkEndian)
       io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
       io.write_bytes(body_size, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(encoded.flags, IO::ByteFormat::NetworkEndian)
+      io.write(encoded.payload) if encoded.payload.bytesize > 0
+      io.to_slice
+    end
 
+    # Encodes only the property flags and property-list tail. The body size is
+    # intentionally excluded so fixed-property publishers can reuse the tail.
+    def encode_properties(props : Amqp::Properties) : EncodedProperties
       flags = 0_u16
       body = IO::Memory.new
 
@@ -93,9 +103,7 @@ module Amqp::Wire::AmqpZeroNineOne
         Types.write_shortstr(body, clid)
       end
 
-      io.write_bytes(flags, IO::ByteFormat::NetworkEndian)
-      io.write(body.to_slice) if body.bytesize > 0
-      io.to_slice
+      EncodedProperties.new(flags, body.to_slice)
     end
 
     def write_empty_frame(io : IO,
@@ -115,6 +123,29 @@ module Amqp::Wire::AmqpZeroNineOne
                     body_size : UInt64) : Bytes
       io = IO::Memory.new
       write_empty_frame(io, channel, class_id, body_size)
+      io.to_slice
+    end
+
+    def write_frame(io : IO,
+                    channel : UInt16,
+                    class_id : UInt16,
+                    body_size : UInt64,
+                    encoded : EncodedProperties) : Nil
+      Frame.write_prefix(io, FrameType::Header, channel, 14 + encoded.payload.bytesize)
+      io.write_bytes(class_id, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(0_u16, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(body_size, IO::ByteFormat::NetworkEndian)
+      io.write_bytes(encoded.flags, IO::ByteFormat::NetworkEndian)
+      io.write(encoded.payload) if encoded.payload.bytesize > 0
+      io.write_byte(Amqp::Wire::FRAME_END)
+    end
+
+    def frame(channel : UInt16,
+              class_id : UInt16,
+              body_size : UInt64,
+              encoded : EncodedProperties) : Bytes
+      io = IO::Memory.new(22 + encoded.payload.bytesize)
+      write_frame(io, channel, class_id, body_size, encoded)
       io.to_slice
     end
 

@@ -1384,14 +1384,7 @@ module Amqp
 
     private def publish_prepared_unconfirmed(prepared : PreparedPublisher,
                                              body : Bytes) : UInt64?
-      header_payload = unless prepared.properties.empty?
-        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
-          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
-          body.size.to_u64,
-          prepared.properties,
-        )
-      end
-      write_publish_frames(prepared.method_frame, header_payload, body,
+      write_prepared_publish_frames(prepared, body,
         max_body_per_frame(@connection.frame_max)) { }
       @connection.stats.incr_published
       nil
@@ -1410,13 +1403,7 @@ module Amqp
           end
         else
           bodies.each do |body|
-            header_payload = Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
-              Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
-              body.size.to_u64,
-              prepared.properties,
-            )
-            write_publish_frames_to(io, prepared.method_frame,
-              header_payload, body, max_body)
+            write_prepared_publish_frames_to(io, prepared, body, max_body)
           end
         end
       end
@@ -2146,6 +2133,16 @@ module Amqp
       end
     end
 
+    private def write_prepared_publish_frames(prepared : PreparedPublisher,
+                                              body : Bytes,
+                                              max_body : Int32,
+                                              &before_write : ->) : Nil
+      @connection.with_write do |io|
+        before_write.call
+        write_prepared_publish_frames_to(io, prepared, body, max_body)
+      end
+    end
+
     private def write_publish_frames_to(io : IO,
                                         exchange : String,
                                         routing_key : String,
@@ -2177,6 +2174,28 @@ module Amqp
                                         max_body : Int32) : Nil
       io.write(method_frame)
       write_content_header_frame(io, body.size.to_u64, header_payload)
+      offset = 0
+      while offset < body.size
+        chunk = Math.min(max_body, body.size - offset)
+        write_body_frame(io, body, offset, chunk)
+        offset += chunk
+      end
+    end
+
+    private def write_prepared_publish_frames_to(io : IO,
+                                                 prepared : PreparedPublisher,
+                                                 body : Bytes,
+                                                 max_body : Int32) : Nil
+      io.write(prepared.method_frame)
+      if header_frame = prepared.__content_header_frame(body.size.to_u64)
+        io.write(header_frame)
+      elsif encoded = prepared.__encoded_properties
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.write_frame(
+          io, @id, Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC, body.size.to_u64, encoded,
+        )
+      else
+        write_content_header_frame(io, body.size.to_u64, nil)
+      end
       offset = 0
       while offset < body.size
         chunk = Math.min(max_body, body.size - offset)

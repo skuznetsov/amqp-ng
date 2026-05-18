@@ -28,6 +28,29 @@ describe Amqp::Wire::AmqpZeroNineOne::ContentHeader do
     CH.empty_frame(9_u16, 60_u16, 123_u64).should eq(expected.to_slice)
   end
 
+  it "reuses encoded property tails across body sizes" do
+    props = Amqp::Properties.new(
+      content_type: "text/plain",
+      delivery_mode: Amqp::Properties::Persistence::Persistent,
+    )
+    encoded = CH.encode_properties(props)
+
+    {0_u64, 123_u64}.each do |body_size|
+      expected = IO::Memory.new
+      Amqp::Wire::Frame.new(
+        Amqp::Wire::FrameType::Header,
+        9_u16,
+        CH.encode(60_u16, body_size, props),
+      ).write(expected)
+
+      actual = IO::Memory.new
+      CH.write_frame(actual, 9_u16, 60_u16, body_size, encoded)
+
+      actual.to_slice.should eq(expected.to_slice)
+      CH.frame(9_u16, 60_u16, body_size, encoded).should eq(expected.to_slice)
+    end
+  end
+
   it "direct-decodes an empty content-header payload equivalent to generic decode" do
     payload = CH.encode(60_u16, 123_u64, Amqp::Properties.new)
     direct = CH.decode_empty(payload)

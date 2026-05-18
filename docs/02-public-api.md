@@ -380,8 +380,11 @@ end
   enabled.
 - `prepared_publisher` is for fixed-route fire-and-forget workloads.
   It avoids repeated route method-frame selection on non-confirm
-  channels. On confirm-enabled channels it preserves existing confirm
-  and recovery behavior by routing through the ordinary confirm paths.
+  channels. When properties are non-empty and fixed, the prepared
+  publisher also reuses the property-list encoding and caches repeated
+  body-size content-header frames. On confirm-enabled channels it
+  preserves existing confirm and recovery behavior by routing through
+  the ordinary confirm paths.
 - `immediate: true` is rejected by RabbitMQ and LavinMQ at the broker
   level (returns a `channel.close` with reply-code 540). The shard
   MUST pass the flag through unchanged so callers see the broker
