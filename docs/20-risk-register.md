@@ -1,6 +1,6 @@
 # amqp — Risk Register
 
-> **Document status:** Draft v0.1, 2026-05-14
+> **Document status:** Draft v0.1, refreshed 2026-05-18
 > **Audience:** Implementers; release reviewers.
 > **Companions:** every other document in `docs/`.
 
@@ -22,16 +22,19 @@ default behaviors change across versions. The vendored
 when 1.20.0-dev renamed it to `@writable`. The same class of bug
 COULD bite this shard if it reached into stdlib internals.
 
-**Mitigation.** P-1 / P-9 forbid stdlib-ivar access. Falsifier
-`T-CODEC-PURE-001` greps the shard's source for `\.@\w+` patterns
-referencing stdlib types and asserts there are none.
+**Mitigation.** P-1 / P-9 forbid stdlib-ivar access. The current
+source is written against public stdlib APIs, and can be audited with
+`rg '\.@' src spec`. `T-CODEC-PURE-001` remains the intended
+executable guard for this invariant; the checked-in spec tree does
+not yet contain a dedicated source-grep falsifier.
 
 **Severity.** High (would break the entire shard on a Crystal upgrade).
 
-**Likelihood (post-mitigation).** Low — the falsifier catches it
-at PR time.
+**Likelihood (post-mitigation).** Medium-low. The implementation
+discipline is strong, but this is not CI-backed until the source-grep
+falsifier is executable in the tree.
 
-**Status.** Mitigated by design + falsifier.
+**Status.** Mitigated by design; executable guard still required.
 
 ---
 
@@ -44,15 +47,19 @@ version does NOT enable this by default, the shard's `verify=peer`
 mode would be effectively reduced to "verify the cert chain but not
 the name."
 
-**Mitigation.** An explicit unit test (`T-TLS-HOSTNAME-001`) asserts
-that handshake against a cert with mismatched SAN raises
-`TlsHandshakeError`. The test runs on every Crystal version in CI.
+**Mitigation.** The current tree covers TLS scheme inference,
+`tls_context` misuse on non-TLS URLs, and an opt-in live TLS success
+path through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`. A wrong-SAN
+negative fixture is still required before `T-TLS-HOSTNAME-001` can be
+treated as implemented.
 
 **Severity.** High (silent security regression).
 
-**Likelihood (post-mitigation).** Low.
+**Likelihood (post-mitigation).** Medium until the wrong-SAN
+falsifier is checked in and run across supported Crystal versions.
 
-**Status.** Mitigated by the falsifier; the test is the audit.
+**Status.** Open release-hardening item; live success coverage exists,
+but hostname-mismatch coverage is not yet executable.
 
 ---
 
@@ -286,21 +293,21 @@ malicious or compromised broker could send a frame with a body-size
 of `UInt32::MAX`, causing the shard to allocate ~4 GB. Or send
 deeply-nested field-tables to OOM the decoder.
 
-**Mitigation.** The shard enforces `body-size <= frame_max * UInt32::MAX`
-implicitly via the negotiated `frame_max`. More aggressively, the
-codec MAY reject any single message whose `body-size` exceeds a
-configurable cap (default: 256 MB). The cap is NOT exposed in v0;
-implementations should pick a sane default and document it.
+**Mitigation.** The frame reader rejects unknown frame types, bad
+frame-end bytes, and payloads larger than `frame_max - 8`. The field
+codec rejects unsupported decimal tags and unknown field-value tags.
 
-Decoder recursion (nested field-tables) is bounded by a constant
-depth (default: 16). Exceeding the depth raises `Amqp::ProtocolError`.
+The current implementation does not expose a maximum content body-size
+cap and does not have an executable nested field-table depth cap. A
+malicious broker remains able to advertise a large content body-size
+and then stream enough frames to force memory growth.
 
 **Severity.** High (DoS by malicious broker).
 
 **Likelihood.** Very low against trusted brokers.
 
-**Status.** Partially mitigated by hard limits; not configurable in
-v0. v0.x exposes the limits.
+**Status.** Partially mitigated by per-frame and field-tag guards.
+Message-size and nested-depth hard caps remain future work.
 
 ---
 
@@ -313,17 +320,21 @@ intended to accommodate both. A future stdlib change between 1.10 and
 current Crystal that breaks the shard would break one of those
 environments.
 
-**Mitigation.** CI runs the shard against the floor (1.10.x) AND
-the latest stable. Falsifier `T-API-DEPS-001` ensures no transitive
-runtime dependencies; falsifier `T-CODEC-PURE-001` ensures no ivar
-reach-in.
+**Mitigation.** Local verification currently exercises the Homebrew
+release Crystal and the user's newer dev Crystal on focused gates.
+The checked-in tree does not contain a multi-version CI workflow.
+`T-API-DEPS-001` and `T-CODEC-PURE-001` remain the intended guards for
+runtime dependency drift and stdlib ivar reach-in.
 
 **Severity.** Medium (would block the author's own use of the
 shard).
 
-**Likelihood.** Low — the falsifiers detect drift early.
+**Likelihood.** Medium-low. Local dual-compiler checks catch recent
+drift, but the repository is not yet protected by checked-in
+multi-version CI.
 
-**Status.** Mitigated.
+**Status.** Partially mitigated by local verification; CI-backed
+coverage remains to be added.
 
 ---
 
@@ -335,15 +346,19 @@ fixes a bug by changing behavior without updating docs), the docs
 become aspirational rather than normative.
 
 **Mitigation.** The acceptance criteria in `docs/17-mvp-cutline.md`
-§3 require every `MUST` to have a passing falsifier; PRs that
-change behavior also update tests, which forces touching the doc.
-PRs that violate a documented `MUST` fail CI.
+§3 require every `MUST` to have a passing falsifier; changes that
+alter behavior should update tests and docs together. The local
+`spec/docs_falsifier_link_spec.cr` guard resolves falsifier IDs
+through the matrix and pins the current unlinked normative-section
+debt so new unlinked sections are visible during local specs.
 
 **Severity.** Medium (loss of contract integrity).
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Mitigated by the falsifier-first workflow.
+**Status.** Partially mitigated by local doc-link lint and
+falsifier-first workflow. Checked-in CI enforcement is not present in
+the current tree.
 
 ---
 

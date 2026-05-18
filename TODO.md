@@ -451,3 +451,8 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/Users/sergey/.grok/bin/grok_review --help` and `grok_worker --help` now pass through to delegate help instead of treating `--help` as a task file.
   - Evidence: smoke task via `grok_review` over ACP stdio returned `OK amqp-ng ACP smoke`.
   - Hygiene: `.grok-acp/` and `.tmp/` are ignored so ACP logs and local harness scratch files do not enter the repo.
+- [x] Calibrate the risk register against current checked-in evidence.
+  - Problem: `docs/20-risk-register.md` still claimed checked-in CI and implemented falsifiers for several areas where the tree only has design intent, local specs, or opt-in harnesses.
+  - Progress: downgraded stdlib ivar scanning, wrong-SAN TLS hostname failure, malicious-peer body-size/depth caps, multi-version Crystal CI, and doc-drift CI enforcement from "mitigated" claims to source-grounded partial/open status.
+  - Evidence: current tree has no `.github` workflow; `spec/tls_spec.cr` covers TLS config and opt-in success but not wrong-SAN failure; `spec/docs_falsifier_link_spec.cr` is local doc-link lint; frame/type specs cover per-frame and tag guards, not total-message/depth caps.
+  - Cutline: this is docs calibration only; adding the missing executable guards remains a separate implementation task.
