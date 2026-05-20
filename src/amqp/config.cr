@@ -9,6 +9,7 @@ module Amqp
       "heartbeat",
       "channel_max",
       "frame_max",
+      "max_body_size",
       "connect_timeout",
       "tcp_nodelay",
       "buffer_size",
@@ -26,6 +27,7 @@ module Amqp
     getter heartbeat : Time::Span
     getter channel_max : UInt16
     getter frame_max : UInt32
+    getter max_body_size : UInt64
     getter connect_timeout : Time::Span
     getter? tcp_nodelay : Bool
     getter buffer_size : Int32
@@ -38,8 +40,8 @@ module Amqp
     getter tls_context : OpenSSL::SSL::Context::Client?
 
     def initialize(@scheme, @host, @port, @user, @password, @vhost,
-                   @heartbeat, @channel_max, @frame_max, @connect_timeout,
-                   @tcp_nodelay, @buffer_size, @product, @information,
+                   @heartbeat, @channel_max, @frame_max, @max_body_size,
+                   @connect_timeout, @tcp_nodelay, @buffer_size, @product, @information,
                    @recovery = false,
                    @recovery_max_attempts = 5,
                    @recovery_initial_delay = 500.milliseconds,
@@ -47,6 +49,9 @@ module Amqp
                    @tls_context : OpenSSL::SSL::Context::Client? = nil)
       if @tls_context && @scheme != "amqps"
         raise TlsConfigError.new("tls_context provided but scheme is '#{@scheme}', expected 'amqps'")
+      end
+      if @max_body_size == 0
+        raise ConfigurationError.new("max_body_size must be positive")
       end
     end
 
@@ -62,6 +67,7 @@ module Amqp
                    heartbeat : Time::Span? = nil,
                    channel_max : UInt16? = nil,
                    frame_max : UInt32? = nil,
+                   max_body_size : UInt64? = nil,
                    connect_timeout : Time::Span? = nil,
                    tcp_nodelay : Bool? = nil,
                    buffer_size : Int32? = nil,
@@ -95,6 +101,7 @@ module Amqp
       eff_heartbeat = heartbeat || query_span_seconds(query["heartbeat"]?)
       eff_channel_max = channel_max || query_u16(query["channel_max"]?)
       eff_frame_max = frame_max || query_u32(query["frame_max"]?)
+      eff_max_body_size = max_body_size || query_u64_positive(query["max_body_size"]?)
       eff_connect_timeout = connect_timeout || query_span_seconds(query["connect_timeout"]?)
       eff_tcp_nodelay = tcp_nodelay.nil? ? query_bool(query["tcp_nodelay"]?) : tcp_nodelay
       eff_buffer_size = buffer_size || query_i32_nonnegative(query["buffer_size"]?)
@@ -112,6 +119,7 @@ module Amqp
         heartbeat: eff_heartbeat || 60.seconds,
         channel_max: eff_channel_max || 2047_u16,
         frame_max: eff_frame_max || 131_072_u32,
+        max_body_size: eff_max_body_size || 64_u64 * 1024_u64 * 1024_u64,
         connect_timeout: eff_connect_timeout || 30.seconds,
         tcp_nodelay: eff_tcp_nodelay || false,
         buffer_size: eff_buffer_size || 16_384,
@@ -156,6 +164,14 @@ module Amqp
       raise UriError.new("invalid UInt32 query value")
     end
 
+    private def self.query_u64_positive(value : String?) : UInt64?
+      value.try do |v|
+        parsed = parse_u64_query(v, "UInt64")
+        raise UriError.new("invalid positive UInt64 query value '#{v}'") if parsed == 0
+        parsed
+      end
+    end
+
     private def self.query_i32_nonnegative(value : String?) : Int32?
       value.try do |v|
         parsed = parse_u32_query(v, "Int32")
@@ -180,6 +196,15 @@ module Amqp
         raise UriError.new("invalid #{label} query value '#{value}'")
       end
       value.to_u32
+    rescue ArgumentError | OverflowError
+      raise UriError.new("invalid #{label} query value '#{value}'")
+    end
+
+    private def self.parse_u64_query(value : String, label : String) : UInt64
+      unless value.matches?(/\A\d+\z/)
+        raise UriError.new("invalid #{label} query value '#{value}'")
+      end
+      value.to_u64
     rescue ArgumentError | OverflowError
       raise UriError.new("invalid #{label} query value '#{value}'")
     end

@@ -2718,6 +2718,10 @@ module Amqp
       unless class_id == Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC
         raise ProtocolError.new("channel #{@id}: header class #{class_id} != 60")
       end
+      max_body_size = @connection.config.max_body_size
+      if body_size > max_body_size
+        raise ProtocolError.new("channel #{@id}: declared body size #{body_size} exceeds max_body_size #{max_body_size}")
+      end
       @pending_props = properties
       @pending_body_size = body_size
       @pending_body_received = 0_u64

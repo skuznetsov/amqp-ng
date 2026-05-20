@@ -283,7 +283,7 @@ Current default local gate:
 crystal spec --error-trace
 ```
 
-Latest no-broker result: `224 examples, 0 failures, 0 errors, 92 pending`.
+Latest no-broker result: `226 examples, 0 failures, 0 errors, 92 pending`.
 Most pending examples are live-broker specs that intentionally skip when
 `AMQP_URL` is unreachable.
 
@@ -318,6 +318,7 @@ Supported URI query keys in v0:
 - `heartbeat`
 - `channel_max`
 - `frame_max`
+- `max_body_size`
 - `connect_timeout`
 - `recovery`
 - `product`

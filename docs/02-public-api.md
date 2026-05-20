@@ -73,6 +73,7 @@ module Amqp
                    heartbeat : Time::Span? = nil,
                    channel_max : UInt16? = nil,
                    frame_max : UInt32? = nil,
+                   max_body_size : UInt64? = nil,
                    connect_timeout : Time::Span = 30.seconds,
                    tls : OpenSSL::SSL::Context::Client? = nil,
                    recovery : Recovery = Recovery::None,
@@ -89,9 +90,13 @@ end
 **Semantics.**
 
 - The keyword arguments `user`, `password`, `heartbeat`, `channel_max`,
-  `frame_max` MAY also be supplied as URI query parameters (see
+  `frame_max`, and `max_body_size` MAY also be supplied as URI query parameters (see
   `docs/04-uri-and-config.md`); when both are present, the keyword
   argument wins. This precedence is normative.
+- `max_body_size` bounds inbound content bodies by the `body-size`
+  declared in the content header. A broker-declared body larger than
+  the configured cap raises `Amqp::ProtocolError` before body frames
+  are buffered. The default cap is 64 MiB.
 - `connect_timeout` is a wall-clock bound on the entire handshake
   (TCP connect + TLS handshake if applicable + AMQP protocol
   negotiation through `connection.open-ok`). On exceeding the bound the

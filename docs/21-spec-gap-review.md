@@ -11,7 +11,7 @@ ranked repair queue for converting the matrix into executable evidence.
 
 ## Baseline
 
-- Latest no-broker full `crystal spec --error-trace` passes: 224 examples, 0 failures, 0 errors, 92 pending.
+- Latest no-broker full `crystal spec --error-trace` passes: 226 examples, 0 failures, 0 errors, 92 pending.
 - Most no-broker pending examples are live AMQP checks. With a plain broker available, the remaining default pending examples are gated live checks: TLS (`AMQP_TLS_URL`), invasive backpressure (`AMQP_BACKPRESSURE_LIVE`), and Docker broker chaos (`AMQP_CHAOS_DOCKER_CONTAINER`).
 - Latest focused LavinMQ publish/confirm smoke passes: 72 examples, 0 failures, 0 errors, 0 pending.
 - Latest focused LavinMQ no-wait/API smoke passes: 39 examples, 0 failures, 0 errors, 0 pending.
@@ -20,6 +20,7 @@ ranked repair queue for converting the matrix into executable evidence.
 - `Time.monotonic` deprecation warnings were removed.
 - `T-CODEC-CONTENT-006` now has a deterministic non-live channel content-assembly guard.
 - `T-CODEC-TYPES-016` now bounds nested field-array/table decode and encode recursion.
+- Inbound content headers now fail fast when declared `body-size` exceeds the configured `max_body_size`.
 
 ## Quadrumvirate Synthesis
 
@@ -157,6 +158,7 @@ Evidence:
 - `docs/16-falsifier-matrix.md` §2 and §9.
 - `src/amqp/config.cr` rejects unknown query keys and parses the v0
   query surface: `heartbeat`, `channel_max`, `frame_max`,
+  `max_body_size`,
   `connect_timeout`, `tcp_nodelay`, `buffer_size`, `recovery`,
   `product`, `information`.
 - `spec/config_spec.cr` covers defaults/vhost decoding, recognized

@@ -288,27 +288,28 @@ experience.
 ## 13. RISK-13: No protection against malicious peers
 
 **Description.** The shard trusts the broker's wire stream. A
-malicious or compromised broker could send a frame with a body-size
-of `UInt32::MAX`, causing the shard to allocate ~4 GB. Or send
-deeply-nested field-tables to OOM the decoder.
+malicious or compromised broker could try to send a frame with a huge
+content `body-size`, or send deeply-nested field-tables to OOM the
+decoder.
 
 **Mitigation.** The frame reader rejects unknown frame types, bad
 frame-end bytes, and payloads larger than `frame_max - 8`. Channel
 content assembly rejects body frames that overflow the declared content
-body size. The field codec rejects unsupported decimal tags and unknown
-field-value tags, and bounds nested field-array/table decode to 32
-recursive container levels.
+body size and rejects content headers whose declared body-size exceeds
+the configured `max_body_size` cap. The field codec rejects unsupported
+decimal tags and unknown field-value tags, and bounds nested
+field-array/table decode to 32 recursive container levels.
 
-The current implementation does not expose a maximum content body-size
-cap. A malicious broker remains able to advertise a large content
-body-size and then stream enough frames to force memory growth.
+The current implementation does not enforce an aggregate per-connection
+or per-process memory budget; several concurrent capped deliveries can
+still consume memory up to their individual caps.
 
 **Severity.** High (DoS by malicious broker).
 
 **Likelihood.** Very low against trusted brokers.
 
-**Status.** Partially mitigated by per-frame and field-tag guards.
-Message-size hard caps remain future work.
+**Status.** Mitigated for per-frame size, per-message content body
+size, and field nesting. Aggregate memory budgets remain future work.
 
 ---
 

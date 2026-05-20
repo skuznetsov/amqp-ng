@@ -110,6 +110,7 @@ avoid silent typos like `?heartbeats=30`).
 | `heartbeat`    | Integer seconds            | Heartbeat interval requested at `connection.tune-ok`                | `60` seconds     |
 | `channel_max`  | Integer 1..65535           | Maximum channel-id requested at `connection.tune-ok`                | `2047`           |
 | `frame_max`    | Integer 4096..2147483647   | Maximum frame size requested at `connection.tune-ok`                | `131072` (128 KB)|
+| `max_body_size` | Positive integer bytes    | Maximum inbound content body size accepted from the broker          | `67108864` (64 MiB) |
 | `connect_timeout` | Integer seconds         | Wall-clock bound on full handshake                                  | `30` seconds     |
 | `tcp_nodelay`  | `true` or `false`          | TCP_NODELAY socket option                                            | `false`          |
 | `buffer_size`  | Non-negative integer bytes | Socket/TLS IO buffer size; `0` disables IO buffering                 | `16384`          |
@@ -153,6 +154,7 @@ The keyword argument names map to query keys as follows:
 | `heartbeat:`             | `heartbeat`     |
 | `channel_max:`           | `channel_max`   |
 | `frame_max:`             | `frame_max`     |
+| `max_body_size:`         | `max_body_size` |
 | `connect_timeout:`       | `connect_timeout` |
 | `recovery:`              | `recovery`      |
 | `product:`               | `product`       |

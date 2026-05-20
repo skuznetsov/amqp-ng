@@ -1,14 +1,14 @@
 require "./spec_helper"
 
 class Amqp::Connection
-  def self.__spec_new : Amqp::Connection
-    new(Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/"))
+  def self.__spec_new(config : Amqp::Config = Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/")) : Amqp::Connection
+    new(config)
   end
 end
 
 class Amqp::Channel
-  def self.__spec_new(id : UInt16 = 1_u16) : Amqp::Channel
-    new(Amqp::Connection.__spec_new, id)
+  def self.__spec_new(id : UInt16 = 1_u16, config : Amqp::Config = Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/")) : Amqp::Channel
+    new(Amqp::Connection.__spec_new(config), id)
   end
 
   def __spec_set_flow_active(active : Bool) : Nil
@@ -75,6 +75,35 @@ describe Amqp::Channel do
       expect_raises(Amqp::ProtocolError, /body fragment overflows declared size/) do
         channel.__spec_process_content_body_frame(
           Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, channel_id, Bytes[3, 4])
+        )
+      end
+    end
+
+    it "raises when the declared content size exceeds the configured cap" do
+      channel = Amqp::Channel.__spec_new(
+        config: Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/", max_body_size: 3_u64)
+      )
+      channel_id = 1_u16
+
+      channel.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(
+          Amqp::Wire::FrameType::Method,
+          channel_id,
+          basic_deliver_payload
+        )
+      )
+
+      expect_raises(Amqp::ProtocolError, /declared body size 4 exceeds max_body_size 3/) do
+        channel.__spec_process_content_header_frame(
+          Amqp::Wire::Frame.new(
+            Amqp::Wire::FrameType::Header,
+            channel_id,
+            Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+              Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+              4_u64,
+              Amqp::Properties.new
+            )
+          )
         )
       end
     end
