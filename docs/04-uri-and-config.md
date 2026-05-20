@@ -112,6 +112,7 @@ avoid silent typos like `?heartbeats=30`).
 | `frame_max`    | Integer 4096..2147483647   | Maximum frame size requested at `connection.tune-ok`                | `131072` (128 KB)|
 | `max_body_size` | Positive integer bytes    | Maximum inbound content body size accepted from the broker          | `67108864` (64 MiB) |
 | `max_inflight_body_bytes` | Positive integer bytes | Maximum sum of content bodies currently being assembled on one connection | `4 * max_body_size` |
+| `max_subscription_mailbox_bytes` | Positive integer bytes | Maximum worst-case bytes for one subscription mailbox (`buffer * max_body_size`) | `1024 * max_body_size` |
 | `connect_timeout` | Integer seconds         | Wall-clock bound on full handshake                                  | `30` seconds     |
 | `tcp_nodelay`  | `true` or `false`          | TCP_NODELAY socket option                                            | `false`          |
 | `buffer_size`  | Non-negative integer bytes | Socket/TLS IO buffer size; `0` disables IO buffering                 | `16384`          |
@@ -157,6 +158,7 @@ The keyword argument names map to query keys as follows:
 | `frame_max:`             | `frame_max`     |
 | `max_body_size:`         | `max_body_size` |
 | `max_inflight_body_bytes:` | `max_inflight_body_bytes` |
+| `max_subscription_mailbox_bytes:` | `max_subscription_mailbox_bytes` |
 | `connect_timeout:`       | `connect_timeout` |
 | `recovery:`              | `recovery`      |
 | `product:`               | `product`       |

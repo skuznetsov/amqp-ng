@@ -1169,6 +1169,7 @@ module Amqp
                 arguments : Amqp::Arguments | NamedTuple = Amqp::Arguments.new,
                 buffer : Int32 = 1024) : Subscription
       arguments = Amqp.coerce_arguments(arguments)
+      validate_subscription_buffer(buffer)
       # Pre-generate a client-side tag if caller didn't supply one. This
       # lets us register the Subscription BEFORE the broker can send any
       # basic.deliver — otherwise a fast broker (or anything that races
@@ -1218,6 +1219,26 @@ module Amqp
       arguments = Amqp.coerce_arguments(arguments)
       consume(queue, consumer_tag: consumer_tag, no_local: no_local,
         no_ack: auto_ack, exclusive: exclusive, arguments: arguments, buffer: buffer)
+    end
+
+    private def validate_subscription_buffer(buffer : Int32) : Nil
+      if buffer < 0
+        raise ConfigurationError.new("subscription buffer must be non-negative")
+      end
+
+      max_body_size = @connection.config.max_body_size
+      limit = @connection.config.max_subscription_mailbox_bytes
+      buffer_u64 = buffer.to_u64
+      if buffer_u64 != 0 && max_body_size > UInt64::MAX // buffer_u64
+        raise ConfigurationError.new("subscription buffer #{buffer} with max_body_size #{max_body_size} overflows mailbox budget calculation")
+      end
+
+      worst_case = max_body_size * buffer_u64
+      if worst_case > limit
+        raise ConfigurationError.new(
+          "subscription buffer #{buffer} can hold #{worst_case} body byte(s), exceeding max_subscription_mailbox_bytes #{limit}"
+        )
+      end
     end
 
     def consume(queue : String,

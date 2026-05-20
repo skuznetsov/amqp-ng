@@ -14,7 +14,7 @@ describe Amqp::Config do
 
   it "parses supported query keys" do
     cfg = Amqp::Config.parse(
-      "amqp://user:p%40ss@example.com/app?heartbeat=7&channel_max=9&frame_max=4096&max_body_size=1048576&max_inflight_body_bytes=2097152&connect_timeout=3&tcp_nodelay=true&buffer_size=32768&recovery=full&product=p&information=i"
+      "amqp://user:p%40ss@example.com/app?heartbeat=7&channel_max=9&frame_max=4096&max_body_size=1048576&max_inflight_body_bytes=2097152&max_subscription_mailbox_bytes=4194304&connect_timeout=3&tcp_nodelay=true&buffer_size=32768&recovery=full&product=p&information=i"
     )
     cfg.user.should eq("user")
     cfg.password.should eq("p@ss")
@@ -23,6 +23,7 @@ describe Amqp::Config do
     cfg.frame_max.should eq(4096_u32)
     cfg.max_body_size.should eq(1_048_576_u64)
     cfg.max_inflight_body_bytes.should eq(2_097_152_u64)
+    cfg.max_subscription_mailbox_bytes.should eq(4_194_304_u64)
     cfg.connect_timeout.should eq(3.seconds)
     cfg.tcp_nodelay?.should be_true
     cfg.buffer_size.should eq(32768)
@@ -33,7 +34,7 @@ describe Amqp::Config do
 
   it "lets keyword arguments override URI query values" do
     cfg = Amqp::Config.parse(
-      "amqp://u:p@example.com/q?heartbeat=7&channel_max=9&frame_max=4096&max_body_size=1048576&max_inflight_body_bytes=2097152&connect_timeout=3&tcp_nodelay=true&buffer_size=32768&recovery=full&product=query&information=query",
+      "amqp://u:p@example.com/q?heartbeat=7&channel_max=9&frame_max=4096&max_body_size=1048576&max_inflight_body_bytes=2097152&max_subscription_mailbox_bytes=4194304&connect_timeout=3&tcp_nodelay=true&buffer_size=32768&recovery=full&product=query&information=query",
       user: "kw-user",
       password: "kw-pass",
       vhost: "kw-vhost",
@@ -42,6 +43,7 @@ describe Amqp::Config do
       frame_max: 8192_u32,
       max_body_size: 2_097_152_u64,
       max_inflight_body_bytes: 4_194_304_u64,
+      max_subscription_mailbox_bytes: 8_388_608_u64,
       connect_timeout: 4.seconds,
       tcp_nodelay: false,
       buffer_size: 0,
@@ -57,6 +59,7 @@ describe Amqp::Config do
     cfg.frame_max.should eq(8192_u32)
     cfg.max_body_size.should eq(2_097_152_u64)
     cfg.max_inflight_body_bytes.should eq(4_194_304_u64)
+    cfg.max_subscription_mailbox_bytes.should eq(8_388_608_u64)
     cfg.connect_timeout.should eq(4.seconds)
     cfg.tcp_nodelay?.should be_false
     cfg.buffer_size.should eq(0)
@@ -125,6 +128,13 @@ describe Amqp::Config do
     expect_raises(Amqp::UriError) { Amqp::Config.parse("amqp://example.com?max_inflight_body_bytes=-1") }
     expect_raises(Amqp::UriError) { Amqp::Config.parse("amqp://example.com?max_inflight_body_bytes=#{UInt64::MAX}0") }
     expect_raises(Amqp::ConfigurationError) { Amqp::Config.parse("amqp://example.com", max_inflight_body_bytes: 0_u64) }
+  end
+
+  it "rejects invalid subscription mailbox byte values" do
+    expect_raises(Amqp::UriError) { Amqp::Config.parse("amqp://example.com?max_subscription_mailbox_bytes=0") }
+    expect_raises(Amqp::UriError) { Amqp::Config.parse("amqp://example.com?max_subscription_mailbox_bytes=-1") }
+    expect_raises(Amqp::UriError) { Amqp::Config.parse("amqp://example.com?max_subscription_mailbox_bytes=#{UInt64::MAX}0") }
+    expect_raises(Amqp::ConfigurationError) { Amqp::Config.parse("amqp://example.com", max_subscription_mailbox_bytes: 0_u64) }
   end
 
   it "rejects invalid recovery query values" do

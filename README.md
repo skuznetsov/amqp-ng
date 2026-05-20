@@ -340,6 +340,7 @@ Supported URI query keys in v0:
 - `frame_max`
 - `max_body_size`
 - `max_inflight_body_bytes`
+- `max_subscription_mailbox_bytes`
 - `connect_timeout`
 - `recovery`
 - `product`

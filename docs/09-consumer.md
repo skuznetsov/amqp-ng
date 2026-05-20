@@ -218,6 +218,9 @@ To mitigate, the shard MUST:
 
 - Default `buffer` to a small value (16) — high-throughput consumers
   set this explicitly per their workload.
+- Reject subscription registration when `buffer * max_body_size`
+  exceeds the configured `max_subscription_mailbox_bytes` cap. This is
+  a worst-case guard; it does not inspect actual message sizes.
 - Document this clearly: a slow consumer first stalls its own channel
   and can later slow the whole connection if frames accumulate faster
   than the channel handler drains them. This is intentional — the shard

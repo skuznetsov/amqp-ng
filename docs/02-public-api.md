@@ -75,6 +75,7 @@ module Amqp
                    frame_max : UInt32? = nil,
                    max_body_size : UInt64? = nil,
                    max_inflight_body_bytes : UInt64? = nil,
+                   max_subscription_mailbox_bytes : UInt64? = nil,
                    connect_timeout : Time::Span = 30.seconds,
                    tls : OpenSSL::SSL::Context::Client? = nil,
                    recovery : Recovery = Recovery::None,
@@ -92,9 +93,10 @@ end
 
 - The keyword arguments `user`, `password`, `heartbeat`, `channel_max`,
   `frame_max`, `max_body_size`, and `max_inflight_body_bytes` MAY also
-  be supplied as URI query parameters (see `docs/04-uri-and-config.md`);
-  when both are present, the keyword argument wins. This precedence is
-  normative.
+  be supplied as URI query parameters (see `docs/04-uri-and-config.md`).
+  `max_subscription_mailbox_bytes` follows the same URI/keyword
+  precedence rule. When both are present, the keyword argument wins.
+  This precedence is normative.
 - `max_body_size` bounds inbound content bodies by the `body-size`
   declared in the content header. A broker-declared body larger than
   the configured cap raises `Amqp::ProtocolError` before body frames
@@ -104,6 +106,11 @@ end
   content-header time and released when delivery assembly completes or
   aborts. It does not bound bytes already handed to consumer mailboxes.
   The default is four times `max_body_size`.
+- `max_subscription_mailbox_bytes` bounds the worst-case bytes a single
+  subscription mailbox can hold: `buffer * max_body_size`. The default
+  is `1024 * max_body_size`, preserving the low-level `consume`
+  compatibility default while giving deployments a hard knob for
+  smaller mailbox budgets.
 - `connect_timeout` is a wall-clock bound on the entire handshake
   (TCP connect + TLS handshake if applicable + AMQP protocol
   negotiation through `connection.open-ok`). On exceeding the bound the
@@ -472,7 +479,8 @@ end
   buffer fills: the per-channel handler blocks on the subscription
   inbox. If that channel's frame inbox also fills, pressure can
   propagate to the connection reader and then to the broker via TCP
-  backpressure.
+  backpressure. The configured `max_subscription_mailbox_bytes` rejects
+  subscription buffers whose worst-case body bytes exceed the cap.
   The shard MUST NOT silently drop deliveries.
 
 ### 4.5 Synchronous get

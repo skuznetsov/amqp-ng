@@ -11,6 +11,7 @@ module Amqp
       "frame_max",
       "max_body_size",
       "max_inflight_body_bytes",
+      "max_subscription_mailbox_bytes",
       "connect_timeout",
       "tcp_nodelay",
       "buffer_size",
@@ -30,6 +31,7 @@ module Amqp
     getter frame_max : UInt32
     getter max_body_size : UInt64
     getter max_inflight_body_bytes : UInt64
+    getter max_subscription_mailbox_bytes : UInt64
     getter connect_timeout : Time::Span
     getter? tcp_nodelay : Bool
     getter buffer_size : Int32
@@ -42,7 +44,8 @@ module Amqp
     getter tls_context : OpenSSL::SSL::Context::Client?
 
     def initialize(@scheme, @host, @port, @user, @password, @vhost,
-                   @heartbeat, @channel_max, @frame_max, @max_body_size, @max_inflight_body_bytes,
+                   @heartbeat, @channel_max, @frame_max, @max_body_size,
+                   @max_inflight_body_bytes, @max_subscription_mailbox_bytes,
                    @connect_timeout, @tcp_nodelay, @buffer_size, @product, @information,
                    @recovery = false,
                    @recovery_max_attempts = 5,
@@ -57,6 +60,9 @@ module Amqp
       end
       if @max_inflight_body_bytes == 0
         raise ConfigurationError.new("max_inflight_body_bytes must be positive")
+      end
+      if @max_subscription_mailbox_bytes == 0
+        raise ConfigurationError.new("max_subscription_mailbox_bytes must be positive")
       end
     end
 
@@ -74,6 +80,7 @@ module Amqp
                    frame_max : UInt32? = nil,
                    max_body_size : UInt64? = nil,
                    max_inflight_body_bytes : UInt64? = nil,
+                   max_subscription_mailbox_bytes : UInt64? = nil,
                    connect_timeout : Time::Span? = nil,
                    tcp_nodelay : Bool? = nil,
                    buffer_size : Int32? = nil,
@@ -109,6 +116,7 @@ module Amqp
       eff_frame_max = frame_max || query_u32(query["frame_max"]?)
       eff_max_body_size = max_body_size || query_u64_positive(query["max_body_size"]?)
       eff_max_inflight_body_bytes = max_inflight_body_bytes || query_u64_positive(query["max_inflight_body_bytes"]?)
+      eff_max_subscription_mailbox_bytes = max_subscription_mailbox_bytes || query_u64_positive(query["max_subscription_mailbox_bytes"]?)
       eff_connect_timeout = connect_timeout || query_span_seconds(query["connect_timeout"]?)
       eff_tcp_nodelay = tcp_nodelay.nil? ? query_bool(query["tcp_nodelay"]?) : tcp_nodelay
       eff_buffer_size = buffer_size || query_i32_nonnegative(query["buffer_size"]?)
@@ -130,6 +138,7 @@ module Amqp
         frame_max: eff_frame_max || 131_072_u32,
         max_body_size: final_max_body_size,
         max_inflight_body_bytes: eff_max_inflight_body_bytes || default_max_inflight_body_bytes(final_max_body_size),
+        max_subscription_mailbox_bytes: eff_max_subscription_mailbox_bytes || default_max_subscription_mailbox_bytes(final_max_body_size),
         connect_timeout: eff_connect_timeout || 30.seconds,
         tcp_nodelay: eff_tcp_nodelay || false,
         buffer_size: eff_buffer_size || 16_384,
@@ -163,6 +172,14 @@ module Amqp
         UInt64::MAX
       else
         max_body_size * 4
+      end
+    end
+
+    private def self.default_max_subscription_mailbox_bytes(max_body_size : UInt64) : UInt64
+      if max_body_size > UInt64::MAX // 1024
+        UInt64::MAX
+      else
+        max_body_size * 1024
       end
     end
 

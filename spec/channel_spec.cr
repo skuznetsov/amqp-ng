@@ -39,6 +39,10 @@ class Amqp::Channel
     process_body_frame(frame)
   end
 
+  def __spec_validate_subscription_buffer(buffer : Int32) : Nil
+    validate_subscription_buffer(buffer)
+  end
+
   def __spec_abort_with(reason : Exception = Amqp::SocketError.new("spec abort")) : Nil
     abort_with(reason)
   end
@@ -232,6 +236,31 @@ describe Amqp::Channel do
 
       channel.__spec_enter_recovery
       connection.__spec_inflight_body_bytes.should eq(0_u64)
+    end
+  end
+
+  describe "subscription buffer guards" do
+    it "rejects negative subscription buffers" do
+      channel = Amqp::Channel.__spec_new
+
+      expect_raises(Amqp::ConfigurationError, /buffer must be non-negative/) do
+        channel.__spec_validate_subscription_buffer(-1)
+      end
+    end
+
+    it "rejects subscription buffers whose worst-case body bytes exceed the configured mailbox budget" do
+      channel = Amqp::Channel.__spec_new(
+        config: Amqp::Config.parse(
+          "amqp://guest:guest@127.0.0.1:5672/",
+          max_body_size: 4_u64,
+          max_subscription_mailbox_bytes: 7_u64
+        )
+      )
+
+      channel.__spec_validate_subscription_buffer(1)
+      expect_raises(Amqp::ConfigurationError, /max_subscription_mailbox_bytes 7/) do
+        channel.__spec_validate_subscription_buffer(2)
+      end
     end
   end
 

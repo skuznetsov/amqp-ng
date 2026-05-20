@@ -301,22 +301,24 @@ content assembly rejects body frames that overflow the declared content
 body size, rejects content headers whose declared body-size exceeds the
 configured `max_body_size` cap, and reserves declared content body sizes
 against `max_inflight_body_bytes` while bodies are being assembled on
-one connection. The field codec rejects unsupported decimal tags and
-unknown field-value tags, and bounds nested field-array/table decode to
-32 recursive container levels.
+one connection. Subscription registration rejects buffers whose
+worst-case body bytes (`buffer * max_body_size`) exceed
+`max_subscription_mailbox_bytes`. The field codec rejects unsupported
+decimal tags and unknown field-value tags, and bounds nested
+field-array/table decode to 32 recursive container levels.
 
-The current implementation does not enforce a per-process budget or a
-budget for bytes already handed to consumer mailboxes; several queued
-deliveries can still consume memory after assembly completes.
+The current implementation does not enforce a per-process budget or
+actual per-mailbox byte accounting; `max_subscription_mailbox_bytes` is
+a conservative capacity guard based on `max_body_size`.
 
 **Severity.** High (DoS by malicious broker).
 
 **Likelihood.** Very low against trusted brokers.
 
 **Status.** Mitigated for per-frame size, per-message content body
-size, per-connection in-flight body assembly, and field nesting.
-Per-process and consumer-mailbox aggregate memory budgets remain future
-work.
+size, per-connection in-flight body assembly, worst-case subscription
+mailbox capacity, and field nesting. Per-process memory budgets and
+actual queued-byte accounting remain future work.
 
 ---
 
