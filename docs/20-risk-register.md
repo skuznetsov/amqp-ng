@@ -354,15 +354,17 @@ become aspirational rather than normative.
 alter behavior should update tests and docs together. The local
 `spec/docs_falsifier_link_spec.cr` guard resolves falsifier IDs
 through the matrix and pins the current unlinked normative-section
-debt so new unlinked sections are visible during local specs.
+debt so new unlinked sections are visible during local specs. It also
+checks that the URI query-key lists in `docs/04-uri-and-config.md`
+and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 
 **Severity.** Medium (loss of contract integrity).
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Partially mitigated by local doc-link lint and
-falsifier-first workflow. Checked-in CI enforcement is not present in
-the current tree.
+**Status.** Partially mitigated by local doc-link and config-surface
+lint plus falsifier-first workflow. Checked-in CI enforcement is not
+present in the current tree.
 
 ---
 

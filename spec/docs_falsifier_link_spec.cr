@@ -159,6 +159,50 @@ module DocsFalsifierLint
       end
     end
   end
+
+  def docs_uri_query_keys : Set(String)
+    path = File.join(ROOT, "docs/04-uri-and-config.md")
+    keys = Set(String).new
+    in_table = false
+
+    File.each_line(path) do |line|
+      if line.starts_with?("| Key")
+        in_table = true
+        next
+      end
+      next unless in_table
+      break if line.strip.empty?
+      next if line.starts_with?("|---")
+
+      if match = line.match(/^\| `([^`]+)`/)
+        keys << match[1]
+      end
+    end
+
+    keys
+  end
+
+  def readme_uri_query_keys : Set(String)
+    path = File.join(ROOT, "README.md")
+    keys = Set(String).new
+    in_list = false
+
+    File.each_line(path) do |line|
+      if line.strip == "Supported URI query keys in v0:"
+        in_list = true
+        next
+      end
+      next unless in_list
+      next if line.strip.empty? && keys.empty?
+      break if line.strip.empty?
+
+      if match = line.match(/^- `([^`]+)`/)
+        keys << match[1]
+      end
+    end
+
+    keys
+  end
 end
 
 describe "docs falsifier links" do
@@ -185,5 +229,15 @@ describe "docs falsifier links" do
       details = unknown.map { |label, token| "#{label}: #{token}" }.join('\n')
       fail "Falsifier references missing from docs/16-falsifier-matrix.md:\n#{details}"
     end
+  end
+end
+
+describe "docs config surface" do
+  it "keeps docs/04 URI query keys aligned with Config::RECOGNIZED_QUERY_KEYS" do
+    DocsFalsifierLint.docs_uri_query_keys.should eq(Amqp::Config::RECOGNIZED_QUERY_KEYS.to_set)
+  end
+
+  it "keeps README URI query keys aligned with Config::RECOGNIZED_QUERY_KEYS" do
+    DocsFalsifierLint.readme_uri_query_keys.should eq(Amqp::Config::RECOGNIZED_QUERY_KEYS.to_set)
   end
 end
