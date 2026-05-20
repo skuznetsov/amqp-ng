@@ -266,6 +266,10 @@ Set `AMQP_BENCH_CONFIRM_WINDOWS` to sweep confirm-window sizes; the
 tool emits `confirm_window_<n>` lanes that publish `n` messages, wait
 for confirms, and repeat. These lanes show the transport benefit of a
 ladder/windowed confirm style without changing application code.
+After a run, `tools/perf_recommend.cr <bench.json>` prints conservative
+run-local guidance, such as when batch publishing, prepared fixed-route
+publishers, route sharding, or body-size reduction are the highest
+leverage follow-ups.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 
@@ -324,11 +328,12 @@ and `spec/channel_spec.cr`.
 Additional gates used for this branch:
 
 ```sh
-crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr
+crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr tools/perf_recommendations.cr tools/perf_recommend.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
 crystal build tools/capture_proxy.cr --no-codegen --error-trace
 crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
 crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace
+crystal build tools/perf_recommend.cr --no-codegen --error-trace
 git diff --check
 ```
 

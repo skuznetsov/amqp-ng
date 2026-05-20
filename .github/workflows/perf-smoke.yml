@@ -87,6 +87,9 @@ jobs:
       - name: Validate perf smoke JSON
         run: crystal run tools/perf_smoke_assert.cr --error-trace -- ".tmp/perf-smoke/${{ matrix.slug }}.json"
 
+      - name: Print perf recommendations
+        run: crystal run tools/perf_recommend.cr --error-trace -- ".tmp/perf-smoke/${{ matrix.slug }}.json"
+
       - uses: actions/upload-artifact@v4
         with:
           name: perf-smoke-${{ matrix.slug }}
