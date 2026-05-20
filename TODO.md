@@ -509,4 +509,10 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local matching release gate `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: local format check, `tools/perf_publish.cr --release --no-codegen`, `tools/capture_proxy.cr --no-codegen`, and `git diff --check` exit 0.
-  - Cutline: broker-backed, TLS wrong-SAN, and performance CI remain future work.
+  - Cutline: broker-backed and performance CI remain future work.
+- [x] Implement `T-TLS-HOSTNAME-001` as a default no-broker wrong-SAN guard.
+  - Problem: RISK-2 still trusted Crystal/OpenSSL hostname verification behavior without an executable negative witness in the default suite.
+  - Progress: added a local TLS fixture in `spec/tls_spec.cr` that generates a self-signed certificate for `wrong-host.test`, trusts that certificate, connects to `amqps://127.0.0.1:<port>/`, and requires `Amqp::TlsHandshakeError`.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/tls_spec.cr --error-trace` exits 0: 5 examples, 0 failures, 0 errors, 1 pending.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 92 pending.
+  - Cutline: live TLS success still requires `AMQP_TLS_URL`; LavinMQ TLS remains deferred.

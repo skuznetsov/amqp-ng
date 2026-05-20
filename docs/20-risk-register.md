@@ -48,18 +48,20 @@ mode would be effectively reduced to "verify the cert chain but not
 the name."
 
 **Mitigation.** The current tree covers TLS scheme inference,
-`tls_context` misuse on non-TLS URLs, and an opt-in live TLS success
-path through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`. A wrong-SAN
-negative fixture is still required before `T-TLS-HOSTNAME-001` can be
-treated as implemented.
+`tls_context` misuse on non-TLS URLs, an opt-in live TLS success path
+through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`, and a checked-in
+wrong-SAN negative fixture. The wrong-SAN fixture starts a local TLS
+socket, trusts the presented certificate chain, connects via a
+different URL host, and requires `Amqp::TlsHandshakeError`.
 
 **Severity.** High (silent security regression).
 
-**Likelihood (post-mitigation).** Medium until the wrong-SAN
-falsifier is checked in and run across supported Crystal versions.
+**Likelihood (post-mitigation).** Low for the checked no-broker
+surface. The fixture is included in the default spec suite and the
+checked-in Crystal-version CI matrix.
 
-**Status.** Open release-hardening item; live success coverage exists,
-but hostname-mismatch coverage is not yet executable.
+**Status.** Mitigated for default no-broker verification. Live TLS
+success remains opt-in because it requires a real TLS AMQP broker.
 
 ---
 
