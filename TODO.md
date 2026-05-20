@@ -654,3 +654,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr --error-trace` exits 0: 1 example, 0 failures, 0 errors, 1 pending.
   - Evidence: `AMQP_PERF_LIVE=1 AMQP_PERF_WINDOW_SECONDS=0.1 AMQP_PERF_WARMUP_SECONDS=0.01 AMQP_PERF_PUB_001_MIN=1 /opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr --error-trace` exits 0 and remains pending when no local broker is reachable.
   - Cutline: this is the first default-off carrier, not a full normalized `spec/perf` suite or release-blocking threshold.
+- [x] Add default-off `spec/perf` carrier for `T-PERF-PUB-002`.
+  - Frame: `Window` = roadmap async-confirm row without an executable carrier; `Transport` = `publish_async` outcome channels -> concurrent drain fiber -> local result artifact; `Potential` = `(reserved_perf_rows, unmeasured_confirm_lag, harness_bootstrap_work)`.
+  - Progress: added `spec/perf/t_perf_pub_002_spec.cr`. The spec is gated by `AMQP_PERF_LIVE=1`, runs warm-up and measurement windows, checks `AMQP_PERF_PUB_002_MIN`, drains confirms concurrently, rejects nacks/returns, and writes JSON/TXT artifacts under ignored `spec/perf/results/`.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr spec/perf/t_perf_pub_002_spec.cr --error-trace` exits 0: 2 examples, 0 failures, 0 errors, 2 pending.
+  - Evidence: `AMQP_PERF_LIVE=1 AMQP_PERF_WINDOW_SECONDS=0.1 AMQP_PERF_WARMUP_SECONDS=0.01 AMQP_PERF_PUB_002_MIN=1 /opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_002_spec.cr --error-trace` exits 0 and remains pending when no local broker is reachable.
+  - Cutline: this measures async-confirm carrier shape only; normalized broker/compiler baselines and release-blocking thresholds remain future work.

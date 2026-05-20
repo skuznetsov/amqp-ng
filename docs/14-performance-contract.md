@@ -89,7 +89,11 @@ batches acks; the shard's tracker uses a sorted-map for O(log N)
 single-tag resolution. ~50k/s is the conservative bound; 100k/s+ is
 plausible.
 
-**Future harness:** `T-PERF-PUB-002`.
+**Executable harness:** `spec/perf/t_perf_pub_002_spec.cr` is default-off
+behind `AMQP_PERF_LIVE=1`. It publishes with `Channel#publish_async`,
+drains outcome channels on a concurrent fiber, asserts the caller-provided
+`AMQP_PERF_PUB_002_MIN` bound, and writes local JSON/TXT artifacts under
+`spec/perf/results/`.
 
 **Synchronous variant.** PERF-3-SYNC: `Channel#publish_confirm` from
 a single fiber (waiting per-publish) sustains `> 5000 messages/second`.
