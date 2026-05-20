@@ -630,3 +630,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 8 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic missing lane and prints the expected missing-lane failure.
   - Cutline: this only fails disappeared baseline lanes; threshold regression and metadata mismatch still use their separate env gates.
+- [x] Add strict new-lane failure mode for benchmark comparison.
+  - Frame: `Window` = lanes present only in the current benchmark artifact; `Transport` = compare delta list -> optional schema-review failure; `Potential` = `(unreviewed_new_lane_count, benchmark_schema_drift, baseline_policy_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now accepts `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` and exits nonzero if any current-only `metrics` or `stages` lane appears. Default behavior remains informational.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 9 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic new lane and prints the expected new-lane failure.
+  - Cutline: this is for strict profile/schema gates; normal exploratory comparisons can keep new lanes informational.

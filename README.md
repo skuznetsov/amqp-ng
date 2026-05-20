@@ -198,7 +198,9 @@ It prints regressions, improvements, missing lanes, and new lanes. Set
 `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` to make the command exit nonzero
 when a matching lane regresses past a local threshold; set
 `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` to fail when a baseline lane
-is absent from the current artifact. New benchmark
+is absent from the current artifact; set
+`AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` to require explicit review for
+current-only lanes. New benchmark
 artifacts include the benchmark schema version, Crystal description,
 release/threading compile flags, and workload-shape fields such as
 message counts, body size, stage iterations, route fanout, and confirm
@@ -293,6 +295,8 @@ is explained. Use `AMQP_BENCH_COMPARE_FAIL_METADATA=1` when a release
 gate must reject mixed contexts instead of only warning.
 Use `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` when a release gate must
 reject disappeared baseline lanes.
+Use `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` when a release gate must reject
+unexpected benchmark schema expansion until the new lane is reviewed.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 

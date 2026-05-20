@@ -40,6 +40,11 @@ module AmqpPerfCompareReport
     deltas.select(&.status.missing_current?)
   end
 
+  def new_lane_failures(deltas : Array(Delta), fail_new_lane : Bool) : Array(Delta)
+    return [] of Delta unless fail_new_lane
+    deltas.select(&.status.new_lane?)
+  end
+
   def lines(deltas : Array(Delta)) : Array(String)
     return ["No comparable benchmark metrics or stages found."] if deltas.empty?
 
