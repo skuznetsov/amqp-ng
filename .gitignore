@@ -14,5 +14,8 @@ shard.lock
 .tmp/
 .grok-acp/
 
+# Local perf-spec result artifacts.
+/spec/perf/results/
+
 __pycache__/
 *.pyc

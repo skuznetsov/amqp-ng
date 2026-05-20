@@ -648,3 +648,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 10 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `AMQP_BENCH_COMPARE_STRICT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic `msg/s` vs `ops/s` unit mismatch.
   - Cutline: this validates lane-unit comparability only; it does not validate broker/compiler parity by itself.
+- [x] Add first default-off `spec/perf` carrier for `T-PERF-PUB-001`.
+  - Frame: `Window` = roadmap `T-PERF-PUB-001` without an executable carrier; `Transport` = live broker publish window -> local result artifact; `Potential` = `(roadmap_only_perf_rows, unverifiable_release_claims, harness_bootstrap_work)`.
+  - Progress: added `spec/perf/t_perf_pub_001_spec.cr` and `spec/perf/perf_spec_helper.cr`. The spec is gated by `AMQP_PERF_LIVE=1`, runs warm-up and measurement windows, checks `AMQP_PERF_PUB_001_MIN`, and writes JSON/TXT artifacts under ignored `spec/perf/results/`.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr --error-trace` exits 0: 1 example, 0 failures, 0 errors, 1 pending.
+  - Evidence: `AMQP_PERF_LIVE=1 AMQP_PERF_WINDOW_SECONDS=0.1 AMQP_PERF_WARMUP_SECONDS=0.01 AMQP_PERF_PUB_001_MIN=1 /opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr --error-trace` exits 0 and remains pending when no local broker is reachable.
+  - Cutline: this is the first default-off carrier, not a full normalized `spec/perf` suite or release-blocking threshold.

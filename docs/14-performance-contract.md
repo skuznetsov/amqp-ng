@@ -9,9 +9,10 @@
 
 This document lists **non-normative performance targets** for the v0
 shard. They are engineering goals, not release guarantees, because
-the repository does not yet ship a reproducible `spec/perf/` harness.
-Until that harness exists and is wired into CI, the `PERF-N` entries
-below are roadmap targets only.
+the repository only ships the first default-off `spec/perf/` carrier,
+not a complete reproducible benchmark suite with normalized CI baselines.
+Until that suite exists and is wired into CI, the `PERF-N` entries below
+are roadmap targets only.
 
 Numbers are **per-connection** unless stated, on the reference rig
 (see §7). Different hardware will produce different numbers; the
@@ -33,8 +34,8 @@ All numbers in this document assume:
   c7i.2xlarge over 12.5 Gbps for throughput tests.
 - **Message body.** 256 bytes ASCII unless stated.
 
-The intended benchmark location is `spec/perf/<perf-id>.cr`. No
-current v0 claim is VERIFIED by this document alone.
+The benchmark location is `spec/perf/<perf-id>.cr`. No current v0 claim
+is VERIFIED by this document alone.
 
 ---
 
@@ -69,7 +70,10 @@ either the broker's ingest or the socket's serialization. The future
 harness should measure shard overhead against a broker-only or
 reference-client baseline on the same host.
 
-**Future harness:** `T-PERF-PUB-001`.
+**Executable harness:** `spec/perf/t_perf_pub_001_spec.cr` is default-off
+behind `AMQP_PERF_LIVE=1`. It runs warm-up and measurement windows,
+asserts the caller-provided `AMQP_PERF_PUB_001_MIN` bound, and writes
+local JSON/TXT artifacts under `spec/perf/results/`.
 
 ---
 
@@ -235,8 +239,8 @@ when the gate should reject new current-only lanes until a maintainer has
 reviewed the benchmark schema expansion.
 
 Before any `PERF-N` entry above becomes a release-blocking contract,
-the repository needs executable benchmarks under `spec/perf/`. Each
-`spec/perf/T-PERF-*.cr` should run:
+the repository needs a complete executable benchmark suite under
+`spec/perf/`. Each `spec/perf/T-PERF-*.cr` should run:
 
 1. A warm-up of `warmup_seconds` (default 2) NOT included in
    measurement.
@@ -246,10 +250,10 @@ the repository needs executable benchmarks under `spec/perf/`. Each
    the bound, pass/fail, host fingerprint (CPU model, OS, Crystal
    version), and timestamp.
 
-Only after this harness exists should CI run the perf suite on every
-PR. At that point, a regression of more than 10% relative to the
-previous-merge baseline can become a release-blocking warning, even
-if the absolute bound is still met.
+Only after this suite exists should CI run the perf suite on every PR.
+At that point, a regression of more than 10% relative to the
+previous-merge baseline can become a release-blocking warning, even if
+the absolute bound is still met.
 
 Once perf CI exists, the baseline should be the `main` branch's most
 recent successful perf run; the comparison should be automated.

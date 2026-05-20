@@ -189,8 +189,8 @@ performance contract.
 `tools/perf_threshold_assert.cr` can compare a saved benchmark JSON file
 against an explicit threshold profile. This is useful for local release
 gates and host-specific baselines, but `docs/14-performance-contract.md`
-remains a roadmap until `spec/perf/` contains reproducible benchmark
-runners.
+remains a roadmap until the default-off `spec/perf/` harness grows into a
+complete reproducible benchmark suite.
 
 `tools/perf_compare.cr <baseline.json> <current.json>` compares two
 saved benchmark artifacts lane-by-lane across `metrics` and `stages`.
@@ -202,9 +202,8 @@ lanes, and new current-only lanes in one switch; or set
 `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` to fail when a baseline lane
 is absent from the current artifact; set
 `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` to require explicit review for
-current-only lanes. New benchmark
-artifacts include the benchmark schema version, per-lane units,
-Crystal description,
+current-only lanes. New benchmark artifacts include the benchmark schema
+version, per-lane units, Crystal description,
 release/threading compile flags, and workload-shape fields such as
 message counts, body size, stage iterations, route fanout, and confirm
 windows; compare prints warnings when those stable context fields differ
@@ -303,6 +302,20 @@ Use `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` when a release gate must
 reject disappeared baseline lanes.
 Use `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` when a release gate must reject
 unexpected benchmark schema expansion until the new lane is reviewed.
+
+The first executable `spec/perf/` carrier is default-off:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_WINDOW_SECONDS=10 \
+AMQP_PERF_WARMUP_SECONDS=2 \
+AMQP_PERF_PUB_001_MIN=200000 \
+crystal spec spec/perf/t_perf_pub_001_spec.cr --release --error-trace
+```
+
+It writes local result artifacts under `spec/perf/results/`, which are
+ignored by git. Keep `AMQP_PERF_PUB_001_MIN` host-specific until perf CI
+owns a normalized baseline.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 
@@ -449,7 +462,7 @@ Compatibility notes:
 
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
-- `spec/perf/` reproducible benchmark suite.
+- Complete `spec/perf/` reproducible benchmark suite.
 - Checked-in CI for normative thresholded performance gates.
 - Broader reliability transcript corpus.
 - WebSocket transport.

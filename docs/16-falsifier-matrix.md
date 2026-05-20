@@ -246,7 +246,7 @@ deferred rich stats model.
 | ID                       | Asserts                                                                 | Source doc                            |
 |--------------------------|-------------------------------------------------------------------------|---------------------------------------|
 | T-PERF-HANDSHAKE-001     | PERF-1 p99 handshake < 10 ms; PERF-1-TLS < 50 ms.                       | 14 §2                                  |
-| T-PERF-PUB-001           | PERF-2 fire-and-forget throughput.                                      | 14 §3                                  |
+| T-PERF-PUB-001           | PERF-2 fire-and-forget throughput.                                      | 14 §3; `spec/perf/t_perf_pub_001_spec.cr` |
 | T-PERF-PUB-002           | PERF-3 async confirm throughput.                                        | 14 §4                                  |
 | T-PERF-MULTICHAN-001     | PERF-4 eight-channel aggregate throughput.                              | 14 §5                                  |
 | T-PERF-CONS-001          | PERF-5 consume throughput.                                              | 14 §6                                  |
@@ -255,8 +255,10 @@ deferred rich stats model.
 | T-PERF-STATS-001         | PERF-9 stats read < 1 µs/call.                                          | 14 §10                                 |
 | T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11                                 |
 
-These `T-PERF-*` rows are reserved roadmap falsifiers until
-`spec/perf/` exists. They are not current release-blocking checks.
+`T-PERF-PUB-001` has a default-off live carrier under `spec/perf/`.
+The remaining `T-PERF-*` rows are reserved roadmap falsifiers until
+their carriers exist. None of these rows are current release-blocking
+checks.
 
 ---
 
