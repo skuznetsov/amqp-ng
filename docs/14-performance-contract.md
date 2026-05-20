@@ -205,6 +205,15 @@ health check only: it catches broken/missing benchmark output, but its
 low positive floors are not the normative `PERF-N` throughput bounds
 listed above.
 
+The repository also ships `tools/perf_threshold_assert.cr`, which reads
+a saved `tools/perf_publish.cr` JSON artifact and a separate threshold
+profile. The profile can name per-lane `median_min` and `sample_min`
+bounds under `metrics` and `stages`. This is a usable local release
+gate for a known host/broker/compiler profile, but it is still not a
+replacement for `spec/perf/`: it does not create a benchmark window,
+control warm-up, fingerprint the host, or compare against a checked-in
+baseline by itself.
+
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each
 `spec/perf/T-PERF-*.cr` should run:

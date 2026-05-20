@@ -571,3 +571,11 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local RabbitMQ 3.13.7 low-count perf smoke plus assertion exits 0.
   - Evidence: local LavinMQ 2.4.0 low-count perf smoke plus assertion exits 0.
   - Cutline: this is a positive-lane smoke guard, not a normative `PERF-N` throughput contract; `spec/perf/` remains future work.
+- [x] Add explicit benchmark JSON threshold profile validation.
+  - Problem: `tools/perf_smoke_assert.cr` only proves required lanes are present and positive; it cannot express host-specific minimums for release gates.
+  - Progress: added `tools/perf_threshold_assert.cr` and shared `tools/perf_thresholds.cr`. Threshold profiles can require per-lane `median_min` and `sample_min` bounds under `metrics` and `stages`.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_thresholds_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 241 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace` exits 0.
+  - Evidence: local low-floor CLI profile against `.tmp/perf-smoke-rabbitmq.json` exits 0 with `perf threshold assertion passed`.
+  - Cutline: this validates saved benchmark JSON against explicit profiles; it is not yet a reproducible `spec/perf/` benchmark runner or default CI throughput gate.

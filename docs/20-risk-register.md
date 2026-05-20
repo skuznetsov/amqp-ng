@@ -351,8 +351,10 @@ type-checks on pinned Crystal 1.19.2/1.20.2, plus plain-AMQP
 RabbitMQ 3.13.7 and LavinMQ 2.4.0 live specs on Crystal 1.20.2.
 Manual release-gate CI covers TLS plus backpressure and Docker chaos
 against both brokers. Manual perf-smoke CI covers benchmark harness
-execution and positive JSON lane validation. Normative thresholded
-performance gates remain future work.
+execution and positive JSON lane validation. Local threshold profiles
+can be checked with `tools/perf_threshold_assert.cr`, but normative
+thresholded performance gates remain future work until `spec/perf/`
+contains reproducible benchmark runners.
 
 ---
 

@@ -184,8 +184,13 @@ crystal spec --error-trace
 manual `Perf Smoke` workflow executes it on RabbitMQ/LavinMQ and
 validates that required JSON lanes are present with positive medians
 via `tools/perf_smoke_assert.cr`. This is still not a normative
-performance contract; `docs/14-performance-contract.md` remains a
-roadmap until `spec/perf/` exists.
+performance contract.
+
+`tools/perf_threshold_assert.cr` can compare a saved benchmark JSON file
+against an explicit threshold profile. This is useful for local release
+gates and host-specific baselines, but `docs/14-performance-contract.md`
+remains a roadmap until `spec/perf/` contains reproducible benchmark
+runners.
 
 Broad paired local release-compiler run:
 
@@ -310,10 +315,11 @@ and `spec/channel_spec.cr`.
 Additional gates used for this branch:
 
 ```sh
-crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr
+crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
 crystal build tools/capture_proxy.cr --no-codegen --error-trace
 crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
+crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace
 git diff --check
 ```
 
@@ -328,8 +334,9 @@ The checked-in broker CI covers the plain-AMQP live surface. Manual
 `Release Gates` workflow jobs cover TLS, backpressure, and Docker chaos
 gates for RabbitMQ/LavinMQ. The manual `Perf Smoke` workflow covers
 benchmark harness execution plus positive JSON lane validation.
-Normative thresholded performance gates remain opt-in/local release
-checks.
+Thresholded performance profile checks are available locally through
+`tools/perf_threshold_assert.cr`, but normative reproducible benchmark
+runners remain opt-in/local release checks.
 
 ## URI And Config
 
@@ -394,8 +401,8 @@ Compatibility notes:
 
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
-- Checked-in CI for normative thresholded performance gates.
 - `spec/perf/` reproducible benchmark suite.
+- Checked-in CI for normative thresholded performance gates.
 - Broader reliability transcript corpus.
 - WebSocket transport.
 
