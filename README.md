@@ -336,6 +336,17 @@ AMQP_PERF_MULTICHAN_001_MIN=800000 \
 crystal spec spec/perf/t_perf_multichan_001_spec.cr --release --error-trace
 ```
 
+Preloaded manual-ack consume throughput:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_CONS_MESSAGES=1000000 \
+AMQP_PERF_CONS_WARMUP_MESSAGES=10000 \
+AMQP_PERF_CONS_PREFETCH=1000 \
+AMQP_PERF_CONS_001_MIN=100000 \
+crystal spec spec/perf/t_perf_cons_001_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
 ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
 CI owns a normalized baseline.

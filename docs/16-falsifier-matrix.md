@@ -249,16 +249,17 @@ deferred rich stats model.
 | T-PERF-PUB-001           | PERF-2 fire-and-forget throughput.                                      | 14 §3; `spec/perf/t_perf_pub_001_spec.cr` |
 | T-PERF-PUB-002           | PERF-3 async confirm throughput.                                        | 14 §4; `spec/perf/t_perf_pub_002_spec.cr` |
 | T-PERF-MULTICHAN-001     | PERF-4 eight-channel aggregate throughput.                              | 14 §5; `spec/perf/t_perf_multichan_001_spec.cr` |
-| T-PERF-CONS-001          | PERF-5 consume throughput.                                              | 14 §6                                  |
+| T-PERF-CONS-001          | PERF-5 consume throughput.                                              | 14 §6; `spec/perf/t_perf_cons_001_spec.cr` |
 | T-PERF-MEM-001..002      | PERF-6/7 memory bounds.                                                 | 14 §7, §8                              |
 | T-PERF-GC-001            | PERF-8 GC pressure bound.                                               | 14 §9                                  |
 | T-PERF-STATS-001         | PERF-9 stats read < 1 µs/call.                                          | 14 §10                                 |
 | T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11                                 |
 
-`T-PERF-PUB-001`, `T-PERF-PUB-002`, and `T-PERF-MULTICHAN-001` have
-default-off live carriers under `spec/perf/`. The remaining `T-PERF-*`
-rows are reserved roadmap falsifiers until their carriers exist. None of
-these rows are current release-blocking checks.
+`T-PERF-PUB-001`, `T-PERF-PUB-002`, `T-PERF-MULTICHAN-001`, and
+`T-PERF-CONS-001` have default-off live carriers under `spec/perf/`.
+The remaining `T-PERF-*` rows are reserved roadmap falsifiers until
+their carriers exist. None of these rows are current release-blocking
+checks.
 
 ---
 

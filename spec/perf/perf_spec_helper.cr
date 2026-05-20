@@ -36,6 +36,12 @@ module PerfSpecHelper
     Time::Span.new(nanoseconds: (seconds * 1_000_000_000).round.to_i64)
   end
 
+  def legal_subscription_buffer(count : Int32, config : Amqp::Config) : Int32
+    max_by_budget = config.max_subscription_mailbox_bytes // config.max_body_size
+    cap = {max_by_budget, Int32::MAX.to_u64}.min.to_i
+    {1, {count, 8192, cap}.min}.max
+  end
+
   def command_output(command : String, args : Array(String)) : String
     output = IO::Memory.new
     status = Process.run(command, args, output: output, error: Process::Redirect::Close)

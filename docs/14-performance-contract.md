@@ -132,7 +132,12 @@ pre-loaded queue of 1M messages on a local broker sustains
 on the publish path, but ack frames go on the write mutex). Prefetch
 1000 keeps the broker delivering ahead of the consumer.
 
-**Future harness:** `T-PERF-CONS-001`.
+**Executable harness:** `spec/perf/t_perf_cons_001_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1`. It preloads
+`AMQP_PERF_CONS_MESSAGES` messages outside the timed section, drains
+them through `Subscription#receive` with inline `ack`, asserts the
+caller-provided `AMQP_PERF_CONS_001_MIN` bound, and writes local JSON/TXT
+artifacts under `spec/perf/results/`.
 
 ---
 
