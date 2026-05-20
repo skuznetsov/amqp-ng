@@ -66,4 +66,35 @@ describe AmqpPerfCompareReport do
     AmqpPerfCompareReport.lines(AmqpPerfCompareReport.compare(baseline, current)).first
       .should eq("IMPROVEMENT metrics.lane: current 125.0 vs baseline 100.0 (+25.0%)")
   end
+
+  it "warns when stable benchmark metadata differs" do
+    baseline = JSON.parse(%({
+      "benchmark_schema_version": 2,
+      "environment": {
+        "crystal_version": "1.20.1",
+        "crystal_description": "Crystal 1.20.1",
+        "compile_flags": {"release": true, "preview_mt": false, "execution_context": false}
+      }
+    }))
+    current = JSON.parse(%({
+      "benchmark_schema_version": 2,
+      "environment": {
+        "crystal_version": "1.20.2",
+        "crystal_description": "Crystal 1.20.2",
+        "compile_flags": {"release": true, "preview_mt": true, "execution_context": false}
+      }
+    }))
+
+    warnings = AmqpPerfCompareReport.metadata_warnings(baseline, current)
+    warnings.should contain(%(metadata environment.crystal_version differs: baseline "1.20.1", current "1.20.2"))
+    warnings.should contain(%(metadata environment.compile_flags.preview_mt differs: baseline false, current true))
+  end
+
+  it "warns when metadata exists only on one side" do
+    baseline = JSON.parse(%({"benchmark_schema_version": 2}))
+    current = JSON.parse(%({"metrics": {"lane": {"median": 1.0}}}))
+
+    AmqpPerfCompareReport.metadata_warnings(baseline, current)
+      .should contain("metadata benchmark_schema_version exists only in baseline")
+  end
 end

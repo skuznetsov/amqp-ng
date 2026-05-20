@@ -50,6 +50,17 @@ module AmqpPerfCompareReport
     end
   end
 
+  def metadata_warnings(baseline : JSON::Any, current : JSON::Any) : Array(String)
+    warnings = [] of String
+    compare_metadata_value(warnings, "benchmark_schema_version", baseline["benchmark_schema_version"]?, current["benchmark_schema_version"]?)
+    compare_metadata_value(warnings, "environment.crystal_version", environment_value(baseline, "crystal_version"), environment_value(current, "crystal_version"))
+    compare_metadata_value(warnings, "environment.crystal_description", environment_value(baseline, "crystal_description"), environment_value(current, "crystal_description"))
+    compare_metadata_value(warnings, "environment.compile_flags.release", compile_flag(baseline, "release"), compile_flag(current, "release"))
+    compare_metadata_value(warnings, "environment.compile_flags.preview_mt", compile_flag(baseline, "preview_mt"), compile_flag(current, "preview_mt"))
+    compare_metadata_value(warnings, "environment.compile_flags.execution_context", compile_flag(baseline, "execution_context"), compile_flag(current, "execution_context"))
+    warnings
+  end
+
   private def compare_section(section : String,
                               baseline : JSON::Any,
                               current : JSON::Any,
@@ -91,6 +102,36 @@ module AmqpPerfCompareReport
     entry.try(&.["median"].as_f?)
   rescue
     nil
+  end
+
+  private def environment_value(doc : JSON::Any, key : String) : JSON::Any?
+    doc["environment"]?.try(&.[key]?)
+  rescue
+    nil
+  end
+
+  private def compile_flag(doc : JSON::Any, key : String) : JSON::Any?
+    doc["environment"]?.try(&.["compile_flags"]?).try(&.[key]?)
+  rescue
+    nil
+  end
+
+  private def compare_metadata_value(warnings : Array(String),
+                                     path : String,
+                                     baseline : JSON::Any?,
+                                     current : JSON::Any?) : Nil
+    return unless baseline || current
+
+    unless baseline && current
+      warnings << "metadata #{path} exists only in #{baseline ? "baseline" : "current"}"
+      return
+    end
+
+    baseline_value = baseline.to_json
+    current_value = current.to_json
+    return if baseline_value == current_value
+
+    warnings << "metadata #{path} differs: baseline #{baseline_value}, current #{current_value}"
   end
 
   private def magnitude(delta : Delta) : Float64

@@ -214,6 +214,13 @@ replacement for `spec/perf/`: it does not create a benchmark window,
 control warm-up, fingerprint the host, or compare against a checked-in
 baseline by itself.
 
+Saved benchmark artifacts include a small stable metadata block:
+benchmark schema version, Crystal version/description, and compile flags
+for `--release`, `preview_mt`, and `execution_context`. `tools/perf_compare.cr`
+warns when those fields differ between baseline and current artifacts.
+Those warnings do not fail the command by default, but they should block
+strong throughput claims until the environment difference is explained.
+
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each
 `spec/perf/T-PERF-*.cr` should run:

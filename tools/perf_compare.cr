@@ -16,6 +16,10 @@ baseline = JSON.parse(File.read(ARGV[0]))
 current = JSON.parse(File.read(ARGV[1]))
 deltas = AmqpPerfCompareReport.compare(baseline, current, threshold_pct)
 
+AmqpPerfCompareReport.metadata_warnings(baseline, current).each do |warning|
+  STDERR.puts "warning: #{warning}"
+end
+
 AmqpPerfCompareReport.lines(deltas).each { |line| puts "- #{line}" }
 
 failures = AmqpPerfCompareReport.regression_failures(deltas, fail_regression_pct)

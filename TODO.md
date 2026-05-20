@@ -604,3 +604,11 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
   - Evidence: `/opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- .tmp/bench/current_ng_lavinmq_single_stage_repeat_20260520.json .tmp/bench/current_ng_lavinmq_route_body_stage_20260520.json` exits 0 and reports new body/route lanes plus matching-lane regressions/improvements.
   - Cutline: this compares saved artifacts; it does not create a normative benchmark runner or remove the need for paired same-host broker/compiler runs.
+- [x] Add benchmark artifact environment metadata.
+  - Frame: `Window` = saved benchmark JSON that may be compared across branches; `Transport` = artifact metadata -> compare warning path; `Potential` = `(false_apples_to_apples_claims, unexplained_compiler_delta, baseline_drift_uncertainty)`.
+  - Progress: `tools/perf_publish.cr` now writes `benchmark_schema_version` and stable `environment` metadata for Crystal version/description plus release/threading compile flags. `tools/perf_compare.cr` warns when those fields differ or exist only on one side.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace` and `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exit 0.
+  - Evidence: synthetic `tools/perf_compare.cr` process-substitution smoke exits 0 and prints warnings for Crystal version/description and `preview_mt` metadata drift.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 248 examples, 0 failures, 0 errors, 92 pending.
+  - Cutline: no local AMQP broker was listening on `127.0.0.1:5672` during this slice, so the new artifact fields are compile/spec-verified but not live-smoke-emitted in this turn.

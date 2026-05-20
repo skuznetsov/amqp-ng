@@ -734,6 +734,20 @@ end
 JSON.build(STDOUT) do |json|
   json.object do
     json.field "tool", "amqp-ng publish microbench"
+    json.field "benchmark_schema_version", 2
+    json.field "environment" do
+      json.object do
+        json.field "crystal_version", Crystal::VERSION
+        json.field "crystal_description", Crystal::DESCRIPTION
+        json.field "compile_flags" do
+          json.object do
+            json.field "release", {{ flag?(:release) }}
+            json.field "preview_mt", {{ flag?(:preview_mt) }}
+            json.field "execution_context", {{ flag?(:execution_context) }}
+          end
+        end
+      end
+    end
     json.field "url", redact_url(url)
     json.field "queue", queue
     json.field "publish_n", publish_n
