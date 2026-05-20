@@ -502,17 +502,23 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: dev Crystal `crystal spec spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
-  - Cutline: checked-in no-broker CI now covers this guard; broker-backed docs/config gates remain future work.
+  - Cutline: checked-in no-broker and plain-AMQP broker CI now cover this guard; opt-in docs/config claims remain future work.
 - [x] Add checked-in no-broker CI for pinned Crystal versions.
   - Problem: RISK-14 and RISK-15 still depended on local-only verification for default specs, format, docs/config drift guards, dependency guards, and tool type-checks.
   - Progress: added `.github/workflows/ci.yml` with a no-broker matrix pinned to Crystal 1.19.2 and 1.20.2. The workflow runs `shards install`, format check, full no-broker specs, and no-codegen builds for `tools/perf_publish.cr` and `tools/capture_proxy.cr`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local matching release gate `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: local format check, `tools/perf_publish.cr --release --no-codegen`, `tools/capture_proxy.cr --no-codegen`, and `git diff --check` exit 0.
-  - Cutline: broker-backed and performance CI remain future work.
+  - Cutline: plain-AMQP broker CI is added below; performance CI remains future work.
 - [x] Implement `T-TLS-HOSTNAME-001` as a default no-broker wrong-SAN guard.
   - Problem: RISK-2 still trusted Crystal/OpenSSL hostname verification behavior without an executable negative witness in the default suite.
   - Progress: added a local TLS fixture in `spec/tls_spec.cr` that generates a self-signed certificate for `wrong-host.test`, trusts that certificate, connects to `amqps://127.0.0.1:<port>/`, and requires `Amqp::TlsHandshakeError`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/tls_spec.cr --error-trace` exits 0: 5 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 92 pending.
   - Cutline: live TLS success still requires `AMQP_TLS_URL`; LavinMQ TLS remains deferred.
+- [x] Add checked-in plain-AMQP broker CI for RabbitMQ and LavinMQ.
+  - Problem: RISK-14/RISK-15 and the broker compatibility matrix still relied on local-only evidence for the main live broker spec surface.
+  - Progress: extended `.github/workflows/ci.yml` with a `broker-smoke` matrix for `rabbitmq:3.13.7` and `cloudamqp/lavinmq:2.4.0` on Crystal 1.20.2. The job waits for `AMQP_URL` reachability and runs the full spec suite against each broker.
+  - Evidence: local RabbitMQ 3.13.7 Docker smoke `AMQP_URL=amqp://guest:guest@127.0.0.1:5679/ /opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: local LavinMQ 2.4.0 Docker smoke `AMQP_URL=amqp://guest:guest@127.0.0.1:5680/ /opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 4 pending.
+  - Cutline: TLS broker, backpressure timing, Docker chaos, and performance gates remain opt-in/local release checks.

@@ -152,8 +152,8 @@ Proposed falsifiers:
 
 Docs require query-key rejection, precedence rules, vhost encoding,
 userinfo handling, and TLS scheme conflicts. The core URI/config
-negative slice now has focused coverage; TLS handshake behavior still
-needs live or synthetic broker falsifiers.
+negative slice now has focused coverage, and TLS hostname mismatch has
+a default synthetic socket falsifier.
 
 Evidence:
 - `docs/16-falsifier-matrix.md` §2 and §9.
@@ -173,10 +173,12 @@ Converted falsifiers:
 - Representative `T-URI-VHOST-*`: slash-containing and empty vhost forms.
 - Representative `T-TLS-SCHEME-*`: `amqps://` implies TLS and
   `amqp://` plus a TLS context is rejected before socket open.
+- `T-TLS-HOSTNAME-001`: trusted certificate chain with wrong SAN raises
+  `TlsHandshakeError` in the default no-broker suite.
 
 Remaining falsifiers:
-- Live TLS handshake and certificate failure rows remain environment-gated
-  through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT` rather than default-local.
+- Live TLS success, bad-CA, and expired-certificate rows remain
+  environment-gated through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`.
 
 ## Already Converted During This Review
 

@@ -8,7 +8,7 @@ branch.
 
 Current status: **v0.1.0 local release branch**. It is usable as a path
 dependency today. Publishing a public shard release should still re-run
-the opt-in broker matrix listed below.
+the opt-in TLS, chaos, backpressure, and performance gates listed below.
 
 ## Why This Exists
 
@@ -288,6 +288,8 @@ Most pending examples are live-broker specs that intentionally skip when
 `AMQP_URL` is unreachable.
 Checked-in no-broker CI runs this gate, format checks, and local tool
 type-checks on pinned Crystal 1.19.2 and 1.20.2.
+Checked-in plain-AMQP broker CI also runs the live spec surface against
+RabbitMQ 3.13.7 and LavinMQ 2.4.0 on Crystal 1.20.2.
 
 Latest focused LavinMQ publish/confirm smoke:
 `72 examples, 0 failures, 0 errors, 0 pending` for
@@ -312,6 +314,10 @@ are environment gated:
 - TLS broker handshake via `AMQP_TLS_URL`.
 - Subscription backpressure timing via `AMQP_BACKPRESSURE_LIVE`.
 - Broker pause/restart chaos via `AMQP_CHAOS_DOCKER_CONTAINER`.
+
+The checked-in broker CI covers the plain-AMQP live surface. TLS,
+backpressure timing, chaos, and performance gates remain opt-in/local
+release checks.
 
 ## URI And Config
 
@@ -375,7 +381,7 @@ Compatibility notes:
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
 - LavinMQ TLS gate.
-- Full CI broker matrix.
+- Checked-in CI for TLS, backpressure, chaos, and performance gates.
 - `spec/perf/` reproducible benchmark suite.
 - Broader reliability transcript corpus.
 - WebSocket transport.

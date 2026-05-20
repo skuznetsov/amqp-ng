@@ -203,9 +203,9 @@ Current local evidence in this checkout:
   pending examples as RabbitMQ; opt-in backpressure and Docker
   pause/restart chaos pass. LavinMQ TLS is not configured locally.
 
-A checked-in no-broker Crystal-version CI workflow exists, but a broker
-matrix for LavinMQ is not present yet; do not treat this document as
-proof that every commit is automatically checked against LavinMQ.
+A checked-in plain-AMQP broker CI matrix covers RabbitMQ 3.13.7 and
+LavinMQ 2.4.0 on Crystal 1.20.2. TLS, backpressure timing, Docker
+chaos, and performance gates remain opt-in/local release checks.
 
 ---
 

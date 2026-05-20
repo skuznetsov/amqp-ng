@@ -43,3 +43,50 @@ jobs:
         run: |
           crystal build tools/perf_publish.cr --release --no-codegen --error-trace
           crystal build tools/capture_proxy.cr --no-codegen --error-trace
+
+  broker-smoke:
+    name: ${{ matrix.broker }} plain AMQP
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - broker: RabbitMQ 3.13.7
+            image: rabbitmq:3.13.7
+          - broker: LavinMQ 2.4.0
+            image: cloudamqp/lavinmq:2.4.0
+    services:
+      amqp:
+        image: ${{ matrix.image }}
+        ports:
+          - 5672:5672
+
+    env:
+      AMQP_URL: amqp://guest:guest@127.0.0.1:5672/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Wait for broker
+        run: |
+          for _ in $(seq 1 60); do
+            if crystal eval 'require "./spec/spec_helper"; exit(SpecHelper.broker_reachable? ? 0 : 1)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "AMQP broker did not become reachable" >&2
+          exit 1
+
+      - name: Run plain-AMQP live specs
+        run: crystal spec --error-trace

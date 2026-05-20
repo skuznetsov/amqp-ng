@@ -335,12 +335,14 @@ rejects private stdlib ivar reach-in and wire-codec side effects.
 **Severity.** Medium (would block the author's own use of the
 shard).
 
-**Likelihood.** Low for the checked no-broker surface. Broker opt-in,
-TLS wrong-SAN, and performance paths still require separate gates.
+**Likelihood.** Low for checked no-broker and plain-AMQP broker
+surfaces. TLS live-broker, backpressure timing, chaos, and performance
+paths still require separate gates.
 
 **Status.** Mitigated for no-broker default specs and local tool
-type-checks on pinned Crystal 1.19.2/1.20.2. Broker-backed CI remains
-future work.
+type-checks on pinned Crystal 1.19.2/1.20.2, plus plain-AMQP
+RabbitMQ 3.13.7 and LavinMQ 2.4.0 live specs on Crystal 1.20.2.
+Opt-in broker gates remain future work.
 
 ---
 
@@ -364,9 +366,9 @@ and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Mitigated for the checked no-broker surface by local
-doc-link/config-surface lint plus checked-in CI. Broker-backed docs
-claims and opt-in gates remain future work.
+**Status.** Mitigated for checked no-broker and plain-AMQP broker
+surfaces by local doc-link/config-surface lint plus checked-in CI.
+Opt-in TLS/backpressure/chaos/performance claims remain future work.
 
 ---
 
