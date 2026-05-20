@@ -9,10 +9,10 @@
 
 This document lists **non-normative performance targets** for the v0
 shard. They are engineering goals, not release guarantees, because
-the repository only ships the first default-off `spec/perf/` carrier,
-not a complete reproducible benchmark suite with normalized CI baselines.
-Until that suite exists and is wired into CI, the `PERF-N` entries below
-are roadmap targets only.
+the repository only ships default-off `spec/perf/` carriers for part of
+the roadmap, not a complete reproducible benchmark suite with normalized
+CI baselines. Until that suite exists and is wired into CI, the `PERF-N`
+entries below are roadmap targets only.
 
 Numbers are **per-connection** unless stated, on the reference rig
 (see §7). Different hardware will produce different numbers; the
@@ -113,7 +113,11 @@ mutex does not serialise channels too aggressively. If this claim
 fails, the design choice in `docs/00-overview.md` §2.2 (writes on
 caller's fiber under mutex) is questionable.
 
-**Future harness:** `T-PERF-MULTICHAN-001`.
+**Executable harness:** `spec/perf/t_perf_multichan_001_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1`. It opens one connection, starts
+`AMQP_PERF_MULTICHAN_COUNT` channels and producer fibers, asserts the
+caller-provided `AMQP_PERF_MULTICHAN_001_MIN` aggregate bound, and writes
+local JSON/TXT artifacts under `spec/perf/results/`.
 
 ---
 

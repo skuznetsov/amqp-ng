@@ -303,7 +303,8 @@ reject disappeared baseline lanes.
 Use `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` when a release gate must reject
 unexpected benchmark schema expansion until the new lane is reviewed.
 
-The first executable `spec/perf/` carrier is default-off:
+Executable `spec/perf/` carriers are default-off. Fire-and-forget
+single-channel throughput:
 
 ```sh
 AMQP_PERF_LIVE=1 \
@@ -324,10 +325,20 @@ AMQP_PERF_PUB_002_MIN=50000 \
 crystal spec spec/perf/t_perf_pub_002_spec.cr --release --error-trace
 ```
 
+Same-connection multi-channel publish throughput:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_WINDOW_SECONDS=10 \
+AMQP_PERF_WARMUP_SECONDS=2 \
+AMQP_PERF_MULTICHAN_COUNT=8 \
+AMQP_PERF_MULTICHAN_001_MIN=800000 \
+crystal spec spec/perf/t_perf_multichan_001_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
-ignored by git. Keep `AMQP_PERF_PUB_001_MIN` and
-`AMQP_PERF_PUB_002_MIN` host-specific until perf CI owns a normalized
-baseline.
+ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
+CI owns a normalized baseline.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 

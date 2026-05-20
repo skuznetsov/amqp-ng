@@ -660,3 +660,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr spec/perf/t_perf_pub_002_spec.cr --error-trace` exits 0: 2 examples, 0 failures, 0 errors, 2 pending.
   - Evidence: `AMQP_PERF_LIVE=1 AMQP_PERF_WINDOW_SECONDS=0.1 AMQP_PERF_WARMUP_SECONDS=0.01 AMQP_PERF_PUB_002_MIN=1 /opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_002_spec.cr --error-trace` exits 0 and remains pending when no local broker is reachable.
   - Cutline: this measures async-confirm carrier shape only; normalized broker/compiler baselines and release-blocking thresholds remain future work.
+- [x] Add default-off `spec/perf` carrier for `T-PERF-MULTICHAN-001`.
+  - Frame: `Window` = roadmap same-connection multi-channel row without an executable carrier; `Transport` = one connection -> channel/fiber publish set -> local result artifact; `Potential` = `(reserved_perf_rows, unmeasured_write_mutex_contention, harness_bootstrap_work)`.
+  - Progress: added `spec/perf/t_perf_multichan_001_spec.cr`. The spec is gated by `AMQP_PERF_LIVE=1`, runs warm-up and measurement windows, checks `AMQP_PERF_MULTICHAN_001_MIN`, and records `AMQP_PERF_MULTICHAN_COUNT` in the result metadata.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf/t_perf_pub_001_spec.cr spec/perf/t_perf_pub_002_spec.cr spec/perf/t_perf_multichan_001_spec.cr --error-trace` exits 0: 3 examples, 0 failures, 0 errors, 3 pending.
+  - Evidence: `AMQP_PERF_LIVE=1 AMQP_PERF_WINDOW_SECONDS=0.1 AMQP_PERF_WARMUP_SECONDS=0.01 AMQP_PERF_MULTICHAN_001_MIN=1 /opt/homebrew/bin/crystal spec spec/perf/t_perf_multichan_001_spec.cr --error-trace` exits 0 and remains pending when no local broker is reachable.
+  - Cutline: this measures carrier shape and same-connection write-mutex contention only when a live broker is supplied; normalized broker/compiler baselines remain future work.
