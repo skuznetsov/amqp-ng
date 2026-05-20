@@ -201,6 +201,8 @@ artifacts include the benchmark schema version, Crystal description,
 release/threading compile flags, and workload-shape fields such as
 message counts, body size, stage iterations, route fanout, and confirm
 windows; compare prints warnings when those stable context fields differ.
+Set `AMQP_BENCH_COMPARE_FAIL_METADATA=1` to turn those warnings into a
+nonzero exit for strict local gates.
 
 Broad paired local release-compiler run:
 
@@ -285,7 +287,8 @@ When comparing a branch against a saved baseline, run
 longitudinal drift detector, not a substitute for paired broker runs.
 Metadata warnings from that command mean the run is not an apples-to-apples
 throughput comparison until the compiler/build-mode/workload difference
-is explained.
+is explained. Use `AMQP_BENCH_COMPARE_FAIL_METADATA=1` when a release
+gate must reject mixed contexts instead of only warning.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 

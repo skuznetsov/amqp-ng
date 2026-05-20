@@ -62,6 +62,10 @@ module AmqpPerfCompareReport
     warnings
   end
 
+  def metadata_failures(warnings : Array(String), fail_metadata : Bool) : Array(String)
+    fail_metadata ? warnings : [] of String
+  end
+
   private def compare_section(section : String,
                               baseline : JSON::Any,
                               current : JSON::Any,

@@ -618,3 +618,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 6 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
   - Cutline: these warnings are non-failing context guards; explicit threshold failures still require `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` or `tools/perf_threshold_assert.cr`.
+- [x] Add strict metadata failure mode for benchmark comparison.
+  - Frame: `Window` = metadata warnings from saved benchmark comparison; `Transport` = warning list -> optional release-gate failure; `Potential` = `(mixed_context_release_acceptance, manual_gate_policy_work, baseline_drift_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now accepts `AMQP_BENCH_COMPARE_FAIL_METADATA=1` and exits nonzero if any environment/workload metadata warning is present. The default remains warning-only for exploratory local comparisons.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 7 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `AMQP_BENCH_COMPARE_FAIL_METADATA=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic `body_bytes` mismatch and prints the expected metadata failure.
+  - Cutline: this gates metadata mismatch only; throughput regression gating still uses `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT`.

@@ -120,4 +120,11 @@ describe AmqpPerfCompareReport do
     warnings.should contain("metadata body_bytes differs: baseline 256, current 1024")
     warnings.should contain("metadata confirm_windows differs: baseline [1,10,100], current [1,50,500]")
   end
+
+  it "promotes metadata warnings to failures only when requested" do
+    warnings = ["metadata body_bytes differs: baseline 256, current 1024"]
+
+    AmqpPerfCompareReport.metadata_failures(warnings, false).should be_empty
+    AmqpPerfCompareReport.metadata_failures(warnings, true).should eq(warnings)
+  end
 end
