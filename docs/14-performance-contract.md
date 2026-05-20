@@ -196,6 +196,12 @@ budget.
 
 ## 12. Requirements before these become normative
 
+The checked-in manual `Perf Smoke` GitHub Actions workflow runs the
+existing `tools/perf_publish.cr` harness against RabbitMQ and LavinMQ
+with tiny default counts and stores JSON artifacts. This is a harness
+health check only: it proves the benchmark still runs in CI, but it
+does not assert any throughput bound.
+
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each
 `spec/perf/T-PERF-*.cr` should run:

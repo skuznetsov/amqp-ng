@@ -509,7 +509,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local matching release gate `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: local format check, `tools/perf_publish.cr --release --no-codegen`, `tools/capture_proxy.cr --no-codegen`, and `git diff --check` exit 0.
-  - Cutline: plain-AMQP broker CI is added below; performance CI remains future work.
+  - Cutline: plain-AMQP broker CI and manual perf-smoke CI are added below; thresholded performance CI remains future work.
 - [x] Implement `T-TLS-HOSTNAME-001` as a default no-broker wrong-SAN guard.
   - Problem: RISK-2 still trusted Crystal/OpenSSL hostname verification behavior without an executable negative witness in the default suite.
   - Progress: added a local TLS fixture in `spec/tls_spec.cr` that generates a self-signed certificate for `wrong-host.test`, trusts that certificate, connects to `amqps://127.0.0.1:<port>/`, and requires `Amqp::TlsHandshakeError`.
@@ -522,3 +522,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local RabbitMQ 3.13.7 Docker smoke `AMQP_URL=amqp://guest:guest@127.0.0.1:5679/ /opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: local LavinMQ 2.4.0 Docker smoke `AMQP_URL=amqp://guest:guest@127.0.0.1:5680/ /opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 4 pending.
   - Cutline: TLS broker, backpressure timing, Docker chaos, and performance gates remain opt-in/local release checks.
+- [x] Add manual CI perf-smoke workflow.
+  - Problem: `tools/perf_publish.cr` was type-checked in CI but never executed in a checked-in workflow, so harness breakage could survive normal specs.
+  - Progress: added `.github/workflows/perf-smoke.yml` as a `workflow_dispatch` job for RabbitMQ 3.13.7 and LavinMQ 2.4.0. It runs the existing benchmark harness with tiny default counts, prints JSON, and uploads per-broker artifacts.
+  - Evidence: local RabbitMQ 3.13.7 low-count perf smoke exits 0 and emits benchmark JSON.
+  - Evidence: local LavinMQ 2.4.0 low-count perf smoke exits 0 and emits benchmark JSON.
+  - Cutline: this is a harness health check, not a throughput contract; thresholded `spec/perf/` remains future work.

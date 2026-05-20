@@ -1,0 +1,90 @@
+name: Perf Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_n:
+        description: Number of publish operations per measured lane.
+        required: true
+        default: "500"
+      confirm_n:
+        description: Number of confirm operations per measured lane.
+        required: true
+        default: "100"
+      stage_n:
+        description: Number of synthetic codec-stage iterations.
+        required: true
+        default: "2000"
+      samples:
+        description: Number of samples per lane.
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  perf-smoke:
+    name: ${{ matrix.broker }} perf smoke
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - broker: RabbitMQ 3.13.7
+            slug: rabbitmq
+            image: rabbitmq:3.13.7
+          - broker: LavinMQ 2.4.0
+            slug: lavinmq
+            image: cloudamqp/lavinmq:2.4.0
+    services:
+      amqp:
+        image: ${{ matrix.image }}
+        ports:
+          - 5672:5672
+
+    env:
+      AMQP_BENCH_URL: amqp://guest:guest@127.0.0.1:5672/
+      AMQP_BENCH_PUBLISH_N: ${{ inputs.publish_n }}
+      AMQP_BENCH_CONFIRM_N: ${{ inputs.confirm_n }}
+      AMQP_BENCH_STAGE_N: ${{ inputs.stage_n }}
+      AMQP_BENCH_SAMPLES: ${{ inputs.samples }}
+      AMQP_BENCH_BATCH_SIZE: "50"
+      AMQP_BENCH_CHANNELS: "1"
+      AMQP_BENCH_CONNECTIONS: "1"
+      AMQP_BENCH_CONFIRM_WINDOWS: "1,50"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Wait for broker
+        run: |
+          for _ in $(seq 1 60); do
+            if AMQP_URL="$AMQP_BENCH_URL" crystal eval 'require "./spec/spec_helper"; exit(SpecHelper.broker_reachable? ? 0 : 1)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "AMQP broker did not become reachable" >&2
+          exit 1
+
+      - name: Run perf smoke
+        run: |
+          mkdir -p .tmp/perf-smoke
+          crystal run tools/perf_publish.cr --release --error-trace \
+            | tee ".tmp/perf-smoke/${{ matrix.slug }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-${{ matrix.slug }}
+          path: .tmp/perf-smoke/${{ matrix.slug }}.json
