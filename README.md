@@ -192,6 +192,12 @@ gates and host-specific baselines, but `docs/14-performance-contract.md`
 remains a roadmap until `spec/perf/` contains reproducible benchmark
 runners.
 
+`tools/perf_compare.cr <baseline.json> <current.json>` compares two
+saved benchmark artifacts lane-by-lane across `metrics` and `stages`.
+It prints regressions, improvements, missing lanes, and new lanes. Set
+`AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` to make the command exit nonzero
+when a matching lane regresses past a local threshold.
+
 Broad paired local release-compiler run:
 
 - Crystal: `/opt/homebrew/bin/crystal 1.20.1 --release`
@@ -270,6 +276,9 @@ After a run, `tools/perf_recommend.cr <bench.json>` prints conservative
 run-local guidance, such as when batch publishing, prepared fixed-route
 publishers, route sharding, or body-size reduction are the highest
 leverage follow-ups.
+When comparing a branch against a saved baseline, run
+`tools/perf_compare.cr <baseline.json> <current.json>` first; it is a
+longitudinal drift detector, not a substitute for paired broker runs.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 
@@ -328,12 +337,13 @@ and `spec/channel_spec.cr`.
 Additional gates used for this branch:
 
 ```sh
-crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr tools/perf_recommendations.cr tools/perf_recommend.cr
+crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr tools/perf_recommendations.cr tools/perf_recommend.cr tools/perf_compare_report.cr tools/perf_compare.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
 crystal build tools/capture_proxy.cr --no-codegen --error-trace
 crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
 crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace
 crystal build tools/perf_recommend.cr --no-codegen --error-trace
+crystal build tools/perf_compare.cr --no-codegen --error-trace
 git diff --check
 ```
 

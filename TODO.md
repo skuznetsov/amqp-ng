@@ -597,3 +597,10 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_recommendations_spec.cr --error-trace` exits 0: 2 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `/opt/homebrew/bin/crystal run tools/perf_recommend.cr --error-trace -- .tmp/bench/current_ng_lavinmq_route_body_stage_20260520.json` prints batch, prepared publisher, route fanout, and body-size recommendations.
   - Cutline: this is guidance from a single benchmark artifact, not an automatic optimizer or release-blocking performance contract.
+- [x] Add longitudinal benchmark comparison tooling.
+  - Frame: `Window` = two saved benchmark JSON artifacts with overlapping lane names; `Transport` = lane medians across `metrics` and `stages`; `Potential` = `(undetected_regression_count, manual_diff_work, baseline_drift_uncertainty)`.
+  - Progress: added `tools/perf_compare.cr` and `tools/perf_compare_report.cr`. The tool reports matching-lane regressions/improvements, missing current lanes, and new lanes, with optional `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` failure gating for local baseline checks.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 3 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
+  - Evidence: `/opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- .tmp/bench/current_ng_lavinmq_single_stage_repeat_20260520.json .tmp/bench/current_ng_lavinmq_route_body_stage_20260520.json` exits 0 and reports new body/route lanes plus matching-lane regressions/improvements.
+  - Cutline: this compares saved artifacts; it does not create a normative benchmark runner or remove the need for paired same-host broker/compiler runs.
