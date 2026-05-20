@@ -198,8 +198,9 @@ It prints regressions, improvements, missing lanes, and new lanes. Set
 `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` to make the command exit nonzero
 when a matching lane regresses past a local threshold. New benchmark
 artifacts include the benchmark schema version, Crystal description,
-and release/threading compile flags; compare prints warnings when those
-stable metadata fields differ.
+release/threading compile flags, and workload-shape fields such as
+message counts, body size, stage iterations, route fanout, and confirm
+windows; compare prints warnings when those stable context fields differ.
 
 Broad paired local release-compiler run:
 
@@ -283,7 +284,8 @@ When comparing a branch against a saved baseline, run
 `tools/perf_compare.cr <baseline.json> <current.json>` first; it is a
 longitudinal drift detector, not a substitute for paired broker runs.
 Metadata warnings from that command mean the run is not an apples-to-apples
-throughput comparison until the compiler/build-mode difference is explained.
+throughput comparison until the compiler/build-mode/workload difference
+is explained.
 
 Latest cross-broker release-compiler smoke after the bytes-batch fast path:
 

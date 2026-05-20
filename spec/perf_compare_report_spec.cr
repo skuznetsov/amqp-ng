@@ -97,4 +97,27 @@ describe AmqpPerfCompareReport do
     AmqpPerfCompareReport.metadata_warnings(baseline, current)
       .should contain("metadata benchmark_schema_version exists only in baseline")
   end
+
+  it "warns when benchmark workload metadata differs" do
+    baseline = JSON.parse(%({
+      "url": "amqp://127.0.0.1:5672/",
+      "publish_n": 1000,
+      "body_bytes": 256,
+      "confirm_windows": [1, 10, 100],
+      "metrics": {"lane": {"median": 1.0}}
+    }))
+    current = JSON.parse(%({
+      "url": "amqp://127.0.0.1:5673/",
+      "publish_n": 2000,
+      "body_bytes": 1024,
+      "confirm_windows": [1, 50, 500],
+      "metrics": {"lane": {"median": 1.0}}
+    }))
+
+    warnings = AmqpPerfCompareReport.metadata_warnings(baseline, current)
+    warnings.should contain(%(metadata url differs: baseline "amqp://127.0.0.1:5672/", current "amqp://127.0.0.1:5673/"))
+    warnings.should contain("metadata publish_n differs: baseline 1000, current 2000")
+    warnings.should contain("metadata body_bytes differs: baseline 256, current 1024")
+    warnings.should contain("metadata confirm_windows differs: baseline [1,10,100], current [1,50,500]")
+  end
 end

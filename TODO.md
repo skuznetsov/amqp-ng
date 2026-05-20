@@ -612,3 +612,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: synthetic `tools/perf_compare.cr` process-substitution smoke exits 0 and prints warnings for Crystal version/description and `preview_mt` metadata drift.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 248 examples, 0 failures, 0 errors, 92 pending.
   - Cutline: no local AMQP broker was listening on `127.0.0.1:5672` during this slice, so the new artifact fields are compile/spec-verified but not live-smoke-emitted in this turn.
+- [x] Add benchmark workload-shape compare warnings.
+  - Frame: `Window` = saved benchmark artifacts with potentially different workloads; `Transport` = top-level workload metadata -> compare warning path; `Potential` = `(false_apples_to_apples_claims, workload_mismatch_count, baseline_drift_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now warns when workload context differs for redacted URL, publish/confirm counts, batch size, sample count, body size, stage iterations, channel/connection counts, confirm windows, route counts, body sweep sizes, or consume buffer.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 6 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
+  - Cutline: these warnings are non-failing context guards; explicit threshold failures still require `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` or `tools/perf_threshold_assert.cr`.

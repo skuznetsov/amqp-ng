@@ -58,6 +58,7 @@ module AmqpPerfCompareReport
     compare_metadata_value(warnings, "environment.compile_flags.release", compile_flag(baseline, "release"), compile_flag(current, "release"))
     compare_metadata_value(warnings, "environment.compile_flags.preview_mt", compile_flag(baseline, "preview_mt"), compile_flag(current, "preview_mt"))
     compare_metadata_value(warnings, "environment.compile_flags.execution_context", compile_flag(baseline, "execution_context"), compile_flag(current, "execution_context"))
+    compare_workload_metadata(warnings, baseline, current)
     warnings
   end
 
@@ -132,6 +133,28 @@ module AmqpPerfCompareReport
     return if baseline_value == current_value
 
     warnings << "metadata #{path} differs: baseline #{baseline_value}, current #{current_value}"
+  end
+
+  private def compare_workload_metadata(warnings : Array(String),
+                                        baseline : JSON::Any,
+                                        current : JSON::Any) : Nil
+    [
+      "url",
+      "publish_n",
+      "confirm_n",
+      "batch_size",
+      "samples",
+      "body_bytes",
+      "stage_n",
+      "channel_counts",
+      "connection_counts",
+      "confirm_windows",
+      "route_counts",
+      "body_sweep_sizes",
+      "consume_buffer",
+    ].each do |key|
+      compare_metadata_value(warnings, key, baseline[key]?, current[key]?)
+    end
   end
 
   private def magnitude(delta : Delta) : Float64

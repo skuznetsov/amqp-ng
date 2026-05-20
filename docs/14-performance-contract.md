@@ -216,10 +216,13 @@ baseline by itself.
 
 Saved benchmark artifacts include a small stable metadata block:
 benchmark schema version, Crystal version/description, and compile flags
-for `--release`, `preview_mt`, and `execution_context`. `tools/perf_compare.cr`
-warns when those fields differ between baseline and current artifacts.
-Those warnings do not fail the command by default, but they should block
-strong throughput claims until the environment difference is explained.
+for `--release`, `preview_mt`, and `execution_context`. They also include
+the workload shape: redacted URL, message counts, body size, stage
+iterations, channel/connection counts, confirm windows, route fanout,
+body sweep sizes, and consume buffer. `tools/perf_compare.cr` warns when
+those fields differ between baseline and current artifacts. Those warnings
+do not fail the command by default, but they should block strong throughput
+claims until the context difference is explained.
 
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each
