@@ -81,6 +81,12 @@ def sample_rates(label : String, samples : Int32, count : Int32, & : ->) : Array
   rates
 end
 
+def legal_subscription_buffer(count : Int32, config : Amqp::Config) : Int32
+  max_by_budget = config.max_subscription_mailbox_bytes // config.max_body_size
+  cap = {max_by_budget, Int32::MAX.to_u64}.min.to_i
+  {count, 8192, cap}.min
+end
+
 def publish_concurrently(channels : Array(Amqp::Channel), count : Int32, message : Amqp::Message, queue : String) : Nil
   publish_concurrently(channels, count, message, Array.new(channels.size, queue))
 end
@@ -212,7 +218,9 @@ def parse_basic_deliver_direct(payload : Bytes) : UInt64
 end
 
 body = Bytes.new(body_bytes, 120_u8)
+empty_body = Bytes.new(0)
 single_message = Amqp::Message.new(body)
+empty_message = Amqp::Message.new(empty_body)
 property_message = Amqp::Message.new(body, Amqp::Properties.new(content_type: "application/octet-stream"))
 full_batch = Array.new(batch_size) { Amqp::Message.new(body) }
 tail_messages = Array.new(publish_n % batch_size) { Amqp::Message.new(body) }
@@ -222,6 +230,7 @@ tail_bodies = Array.new(publish_n % batch_size) { body }
 results = {} of String => Array(Float64)
 stages = {} of String => Array(Float64)
 queue = ""
+consume_buffer = 0
 
 stages["encode_empty_publish_frames"] = sample_rates("encode_empty_publish_frames", samples, publish_n) do
   publish_n.times do
@@ -340,6 +349,7 @@ end
 Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   ch = conn.channel
   queue = ch.queue_declare("", exclusive: true, auto_delete: true).name
+  consume_buffer = legal_subscription_buffer(publish_n, conn.config)
 
   ch.publish(single_message, "", queue)
   ch.queue_purge(queue)
@@ -351,9 +361,23 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_purge(queue)
   end
 
+  results["publish_single_empty_body"] = sample_rates("publish_single_empty_body", samples, publish_n) do
+    publish_n.times do
+      ch.publish(empty_message, "", queue)
+    end
+    ch.queue_purge(queue)
+  end
+
   results["publish_single_bytes"] = sample_rates("publish_single_bytes", samples, publish_n) do
     publish_n.times do
       ch.publish("", queue, body)
+    end
+    ch.queue_purge(queue)
+  end
+
+  results["publish_single_bytes_empty_body"] = sample_rates("publish_single_bytes_empty_body", samples, publish_n) do
+    publish_n.times do
+      ch.publish("", queue, empty_body)
     end
     ch.queue_purge(queue)
   end
@@ -373,10 +397,35 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
     ch.queue_purge(queue)
   end
 
+  results["publish_prepared_empty_body"] = sample_rates("publish_prepared_empty_body", samples, publish_n) do
+    publish_n.times do
+      prepared.publish(empty_body)
+    end
+    ch.queue_purge(queue)
+  end
+
   prepared_props = ch.prepared_publisher("", queue, properties: property_message.properties)
   results["publish_prepared_props_bytes"] = sample_rates("publish_prepared_props_bytes", samples, publish_n) do
     publish_n.times do
       prepared_props.publish(body)
+    end
+    ch.queue_purge(queue)
+  end
+
+  alt_queue = ch.queue_declare("", exclusive: true, auto_delete: true).name
+  ch.publish(single_message, "", alt_queue)
+  ch.queue_purge(alt_queue)
+  results["publish_single_alternating_routes"] = sample_rates("publish_single_alternating_routes", samples, publish_n) do
+    publish_n.times do |index|
+      ch.publish(single_message, "", index.even? ? queue : alt_queue)
+    end
+    ch.queue_purge(queue)
+    ch.queue_purge(alt_queue)
+  end
+
+  results["publish_single_repeat"] = sample_rates("publish_single_repeat", samples, publish_n) do
+    publish_n.times do
+      ch.publish(single_message, "", queue)
     end
     ch.queue_purge(queue)
   end
@@ -468,7 +517,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       ch.publish_batch(tail_bodies, "", consume_queue) unless tail_bodies.empty?
 
       started = Time.instant
-      sub = ch.consume(consume_queue, no_ack: true, buffer: {publish_n, 8192}.min)
+      sub = ch.consume(consume_queue, no_ack: true, buffer: consume_buffer)
       publish_n.times do
         delivery = sub.receive
         raise "bad consume payload size" unless delivery.body.size == body.size
@@ -498,7 +547,7 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       ch.publish_batch(tail_bodies, "", consume_ack_queue) unless tail_bodies.empty?
 
       started = Time.instant
-      sub = ch.consume(consume_ack_queue, no_ack: false, buffer: {publish_n, 8192}.min)
+      sub = ch.consume(consume_ack_queue, no_ack: false, buffer: consume_buffer)
       publish_n.times do
         delivery = sub.receive
         raise "bad consume ack payload size" unless delivery.body.size == body.size
@@ -636,6 +685,7 @@ JSON.build(STDOUT) do |json|
     json.field "channel_counts", channel_counts
     json.field "connection_counts", connection_counts
     json.field "confirm_windows", confirm_windows
+    json.field "consume_buffer", consume_buffer
     json.field "stages" do
       json.object do
         stages.keys.sort.each do |name|

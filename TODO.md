@@ -579,3 +579,10 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace` exits 0.
   - Evidence: local low-floor CLI profile against `.tmp/perf-smoke-rabbitmq.json` exits 0 with `perf threshold assertion passed`.
   - Cutline: this validates saved benchmark JSON against explicit profiles; it is not yet a reproducible `spec/perf/` benchmark runner or default CI throughput gate.
+- [x] Add LTP/WBA live single-publish attribution lanes.
+  - Frame: `Window` = LavinMQ single fire-and-forget publish gap; `Transport` = publish call -> repeated route frame/header/body writes -> broker ingest; `Potential` = `(unknown_stage_mass, route_cache_uncertainty, body_cost_uncertainty, benchmark_noise)`.
+  - Progress: added `publish_single_empty_body`, `publish_single_bytes_empty_body`, `publish_prepared_empty_body`, `publish_single_alternating_routes`, and `publish_single_repeat` lanes to `tools/perf_publish.cr`.
+  - Progress: fixed the consume benchmark buffer so it respects `max_subscription_mailbox_bytes`; the harness now records the legal `consume_buffer` in JSON.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace` exits 0.
+  - Evidence: LavinMQ 2.4.0 release probe `.tmp/bench/current_ng_lavinmq_single_stage_repeat_20260520.json` passes `tools/perf_smoke_assert.cr` with 28 metrics and 8 stages; it reports `consume_buffer: 1024`, `publish_single` ~457.7k msg/s, `publish_single_repeat` ~447.3k, `publish_single_empty_body` ~484.4k, `publish_single_bytes_empty_body` ~704.7k, `publish_prepared_empty_body` ~656.8k, and `publish_single_alternating_routes` ~329.3k.
+  - Insight: the repeat lane refutes a simple first-lane cold-start explanation, and alternating routes are materially slower in this probe; treat route stability and body-frame/broker ingest as the next measurement corridor, not a blind Message-wrapper rewrite.

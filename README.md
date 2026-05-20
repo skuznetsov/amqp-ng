@@ -253,6 +253,12 @@ It also emits synthetic stage-attribution lanes such as
 `parse_basic_ack_frame_direct`; set `AMQP_BENCH_STAGE_N` to control
 the number of synthetic stage iterations. These stage lanes are
 diagnostic triggers, not live throughput claims.
+For live single-publish attribution, the harness also emits
+`publish_single_empty_body`, `publish_single_bytes_empty_body`,
+`publish_prepared_empty_body`, `publish_single_alternating_routes`, and
+`publish_single_repeat`. These lanes help separate body-size cost,
+public API wrapper cost, prepared-route reuse, route-cache stability,
+and lane-order noise.
 Set `AMQP_BENCH_CONFIRM_WINDOWS` to sweep confirm-window sizes; the
 tool emits `confirm_window_<n>` lanes that publish `n` messages, wait
 for confirms, and repeat. These lanes show the transport benefit of a
