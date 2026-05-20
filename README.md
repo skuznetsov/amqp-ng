@@ -303,8 +303,22 @@ reject disappeared baseline lanes.
 Use `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` when a release gate must reject
 unexpected benchmark schema expansion until the new lane is reviewed.
 
-Executable `spec/perf/` carriers are default-off. Fire-and-forget
-single-channel throughput:
+Executable `spec/perf/` carriers are default-off.
+
+Plain and TLS handshake p99 latency:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_HANDSHAKE_CONNECTIONS=1000 \
+AMQP_PERF_HANDSHAKE_P99_MS=10 \
+AMQP_PERF_TLS_HANDSHAKE_P99_MS=50 \
+crystal spec spec/perf/t_perf_handshake_001_spec.cr --release --error-trace
+```
+
+Set `AMQP_TLS_URL` and optionally `AMQP_TLS_CA_CERT` to include the TLS
+variant; otherwise the TLS example remains pending.
+
+Fire-and-forget single-channel throughput:
 
 ```sh
 AMQP_PERF_LIVE=1 \

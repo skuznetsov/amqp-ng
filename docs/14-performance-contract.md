@@ -49,12 +49,17 @@ AMQP handshake is two round-trips (start/start-ok, tune/tune-ok)
 plus one for `connection.open/open-ok`. Three loopback RTTs +
 broker handling SHOULD fit in 10 ms.
 
-**Future harness:** `T-PERF-HANDSHAKE-001` opens 1000 connections
-sequentially against a local RabbitMQ, records p99, asserts `< 10 ms`.
+**Executable harness:** `spec/perf/t_perf_handshake_001_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1`. It opens
+`AMQP_PERF_HANDSHAKE_CONNECTIONS` sequential connections, records p99,
+asserts the caller-provided `AMQP_PERF_HANDSHAKE_P99_MS` bound, and
+writes local JSON/TXT artifacts under `spec/perf/results/`.
 
 **TLS variant.** PERF-1-TLS: same target with `amqps://` and a
 freshly-issued cert, claim `< 50 ms` p99. TLS handshake dominates;
-50 ms is generous.
+50 ms is generous. The same carrier measures TLS when `AMQP_TLS_URL` is
+set, using `AMQP_TLS_CA_CERT` when supplied, and checks
+`AMQP_PERF_TLS_HANDSHAKE_P99_MS`.
 
 ---
 

@@ -1,6 +1,7 @@
 require "../spec_helper"
 require "file_utils"
 require "json"
+require "uri"
 
 module PerfSpecHelper
   extend self
@@ -40,6 +41,61 @@ module PerfSpecHelper
     max_by_budget = config.max_subscription_mailbox_bytes // config.max_body_size
     cap = {max_by_budget, Int32::MAX.to_u64}.min.to_i
     {1, {count, 8192, cap}.min}.max
+  end
+
+  def percentile(values : Array(Float64), percentile : Float64) : Float64
+    raise "percentile input must not be empty" if values.empty?
+    raise "percentile must be in (0, 1]" unless percentile > 0.0 && percentile <= 1.0
+
+    sorted = values.sort
+    index = (percentile * sorted.size).ceil.to_i - 1
+    index = 0 if index < 0
+    index = sorted.size - 1 if index >= sorted.size
+    sorted[index]
+  end
+
+  def measure_connect_ms(url : String,
+                         count : Int32,
+                         tls_context : OpenSSL::SSL::Context::Client? = nil) : Array(Float64)
+    samples = [] of Float64
+    count.times do
+      started = Time.instant
+      Amqp.connect(url, tls_context: tls_context, recovery: Amqp::Recovery::None,
+        heartbeat: 0.seconds) do |_conn|
+        samples << (Time.instant - started).total_milliseconds
+      end
+    end
+    samples
+  end
+
+  def tls_context_from_env : OpenSSL::SSL::Context::Client?
+    ca_cert = ENV["AMQP_TLS_CA_CERT"]?
+    return nil unless ca_cert
+
+    ctx = Amqp.tls_context_default
+    ctx.ca_certificates = ca_cert
+    ctx
+  end
+
+  def reachable?(url : String, tls_context : OpenSSL::SSL::Context::Client? = nil) : Bool
+    conn = Amqp.connect(url, tls_context: tls_context, recovery: Amqp::Recovery::None,
+      heartbeat: 0.seconds, connect_timeout: 0.5.seconds)
+    conn.close
+    true
+  rescue
+    false
+  end
+
+  def redacted_url(raw_url : String) : String
+    uri = URI.parse(raw_url)
+    userinfo = uri.user ? "#{uri.user}:<redacted>@" : ""
+    host = uri.host || "<host>"
+    port = uri.port ? ":#{uri.port}" : ""
+    path = uri.path.presence || "/"
+    query = uri.query ? "?..." : ""
+    "#{uri.scheme}://#{userinfo}#{host}#{port}#{path}#{query}"
+  rescue
+    "<unparseable>"
   end
 
   def command_output(command : String, args : Array(String)) : String

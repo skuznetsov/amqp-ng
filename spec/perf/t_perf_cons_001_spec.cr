@@ -83,7 +83,7 @@ describe "T-PERF-CONS-001" do
       "batch_size"     => JSON::Any.new(batch_size.to_i64),
       "prefetch_count" => JSON::Any.new(prefetch_count.to_i64),
       "consume_buffer" => JSON::Any.new(buffer.to_i64),
-      "amqp_url"       => JSON::Any.new(SpecHelper.amqp_url),
+      "amqp_url"       => JSON::Any.new(PerfSpecHelper.redacted_url(SpecHelper.amqp_url)),
     }
     PerfSpecHelper.write_result(
       "T-PERF-CONS-001", "consume_ack_preloaded", rate, bound, "msg/s", passed, metadata

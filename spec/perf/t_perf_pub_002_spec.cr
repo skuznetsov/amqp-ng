@@ -64,7 +64,7 @@ describe "T-PERF-PUB-002" do
       "window_seconds" => JSON::Any.new(window.total_seconds),
       "body_bytes"     => JSON::Any.new(body_bytes.to_i64),
       "outcome_buffer" => JSON::Any.new(outcome_buffer.to_i64),
-      "amqp_url"       => JSON::Any.new(SpecHelper.amqp_url),
+      "amqp_url"       => JSON::Any.new(PerfSpecHelper.redacted_url(SpecHelper.amqp_url)),
     }
     PerfSpecHelper.write_result(
       "T-PERF-PUB-002", "publish_async_confirm", rate, bound, "msg/s", passed, metadata
