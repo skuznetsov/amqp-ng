@@ -34,7 +34,8 @@ Status: active working ledger for `amqp-ng`.
   - DoD: `crystal tool format --check` status is documented as current pass/fail, with pre-existing failures separated from new failures.
   - Evidence: current no-broker default full `crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: earlier local full opt-in `AMQP_BACKPRESSURE_LIVE=1 AMQP_CHAOS_DOCKER_CONTAINER=amqp-ng-rabbit AMQP_TLS_URL='amqps://guest:guest@localhost:5671/' AMQP_TLS_CA_CERT='.tmp/rabbitmq_tls/certs/ca_certificate.pem' timeout 180 crystal spec` exited 0 before later parity additions; re-run before public release.
-  - Evidence: earlier LavinMQ 2.4.0 default and opt-in backpressure/chaos suites passed before later parity additions; re-run after broker-compat changes.
+  - Evidence: current live RabbitMQ `rabbitmq:3.13.7` default full suite exits 0 under `/opt/homebrew/bin/crystal spec --error-trace`: 237 examples, 0 failures, 0 errors, 4 pending.
+  - Evidence: current live LavinMQ `cloudamqp/lavinmq:2.4.0` default full suite exits 0 under `/opt/homebrew/bin/crystal spec --error-trace`: 237 examples, 0 failures, 0 errors, 4 pending.
   - Evidence: `crystal tool format --check src spec` exits 0.
 
 - [x] Finish API-to-doc surface audit.
