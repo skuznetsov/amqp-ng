@@ -16,7 +16,7 @@ ranked repair queue for converting the matrix into executable evidence.
 - Latest focused LavinMQ publish/confirm smoke passes: 72 examples, 0 failures, 0 errors, 0 pending.
 - Latest focused LavinMQ no-wait/API smoke passes: 39 examples, 0 failures, 0 errors, 0 pending.
 - The earlier local full opt-in suite passed before later parity additions; rerun it before turning this local branch into a public release artifact.
-- `tools/perf_publish.cr` now exists as a local publish benchmark witness, and the manual `Perf Smoke` workflow runs it against RabbitMQ/LavinMQ with tiny counts. Thresholded `spec/perf/` remains a roadmap item.
+- `tools/perf_publish.cr` now exists as a local publish benchmark witness, and the manual `Perf Smoke` workflow runs it against RabbitMQ/LavinMQ with tiny counts. `tools/perf_smoke_assert.cr` validates required positive JSON lanes. Normative thresholded `spec/perf/` remains a roadmap item.
 - The manual `Release Gates` workflow provisions RabbitMQ TLS and runs the opt-in backpressure and Docker chaos specs against RabbitMQ/LavinMQ.
 - `Time.monotonic` deprecation warnings were removed.
 - `T-CODEC-CONTENT-006` now has a deterministic non-live channel content-assembly guard.

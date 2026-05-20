@@ -34,7 +34,7 @@ jobs:
         run: shards install
 
       - name: Check formatting
-        run: crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr
+        run: crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr
 
       - name: Run no-broker specs
         run: crystal spec --error-trace
@@ -43,6 +43,7 @@ jobs:
         run: |
           crystal build tools/perf_publish.cr --release --no-codegen --error-trace
           crystal build tools/capture_proxy.cr --no-codegen --error-trace
+          crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
 
   broker-smoke:
     name: ${{ matrix.broker }} plain AMQP

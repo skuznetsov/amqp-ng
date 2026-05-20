@@ -198,9 +198,12 @@ budget.
 
 The checked-in manual `Perf Smoke` GitHub Actions workflow runs the
 existing `tools/perf_publish.cr` harness against RabbitMQ and LavinMQ
-with tiny default counts and stores JSON artifacts. This is a harness
-health check only: it proves the benchmark still runs in CI, but it
-does not assert any throughput bound.
+with tiny default counts and stores JSON artifacts. It also runs
+`tools/perf_smoke_assert.cr`, which checks that required JSON lanes are
+present and have positive sample/median values. This is a harness
+health check only: it catches broken/missing benchmark output, but its
+low positive floors are not the normative `PERF-N` throughput bounds
+listed above.
 
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each

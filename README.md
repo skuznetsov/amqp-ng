@@ -180,9 +180,12 @@ crystal spec --error-trace
 
 ## Benchmarks
 
-`tools/perf_publish.cr` is a checked-in local witness harness. It is not
-yet a CI performance contract; `docs/14-performance-contract.md` remains
-a roadmap until `spec/perf/` exists.
+`tools/perf_publish.cr` is a checked-in local witness harness. The
+manual `Perf Smoke` workflow executes it on RabbitMQ/LavinMQ and
+validates that required JSON lanes are present with positive medians
+via `tools/perf_smoke_assert.cr`. This is still not a normative
+performance contract; `docs/14-performance-contract.md` remains a
+roadmap until `spec/perf/` exists.
 
 Broad paired local release-compiler run:
 
@@ -292,8 +295,8 @@ type-checks on pinned Crystal 1.19.2 and 1.20.2.
 Checked-in plain-AMQP broker CI also runs the live spec surface against
 RabbitMQ 3.13.7 and LavinMQ 2.4.0 on Crystal 1.20.2. A manual
 `Perf Smoke` workflow runs the benchmark harness with tiny default
-counts and stores JSON artifacts; it is a harness health check, not a
-throughput contract.
+counts, validates required positive JSON lanes, and stores JSON
+artifacts; it is a harness health check, not a throughput contract.
 
 Latest focused LavinMQ publish/confirm smoke:
 `72 examples, 0 failures, 0 errors, 0 pending` for
@@ -307,8 +310,10 @@ and `spec/channel_spec.cr`.
 Additional gates used for this branch:
 
 ```sh
-crystal tool format --check src spec tools/perf_publish.cr
+crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
+crystal build tools/capture_proxy.cr --no-codegen --error-trace
+crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
 git diff --check
 ```
 
@@ -322,8 +327,9 @@ are environment gated:
 The checked-in broker CI covers the plain-AMQP live surface. Manual
 `Release Gates` workflow jobs cover the RabbitMQ TLS gate plus the
 backpressure and Docker chaos gates for RabbitMQ/LavinMQ. The manual
-`Perf Smoke` workflow covers benchmark harness execution. LavinMQ TLS
-and thresholded performance gates remain opt-in/local release checks.
+`Perf Smoke` workflow covers benchmark harness execution plus positive
+JSON lane validation. LavinMQ TLS and normative thresholded performance
+gates remain opt-in/local release checks.
 
 ## URI And Config
 
@@ -387,7 +393,8 @@ Compatibility notes:
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
 - LavinMQ TLS gate.
-- Checked-in CI for LavinMQ TLS and thresholded performance gates.
+- Checked-in CI for LavinMQ TLS and normative thresholded performance
+  gates.
 - `spec/perf/` reproducible benchmark suite.
 - Broader reliability transcript corpus.
 - WebSocket transport.

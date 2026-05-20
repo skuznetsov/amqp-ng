@@ -84,6 +84,9 @@ jobs:
           crystal run tools/perf_publish.cr --release --error-trace \
             | tee ".tmp/perf-smoke/${{ matrix.slug }}.json"
 
+      - name: Validate perf smoke JSON
+        run: crystal run tools/perf_smoke_assert.cr --error-trace -- ".tmp/perf-smoke/${{ matrix.slug }}.json"
+
       - uses: actions/upload-artifact@v4
         with:
           name: perf-smoke-${{ matrix.slug }}

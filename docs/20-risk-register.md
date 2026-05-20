@@ -345,8 +345,8 @@ type-checks on pinned Crystal 1.19.2/1.20.2, plus plain-AMQP
 RabbitMQ 3.13.7 and LavinMQ 2.4.0 live specs on Crystal 1.20.2.
 Manual release-gate CI covers RabbitMQ TLS plus backpressure and Docker
 chaos against both brokers. Manual perf-smoke CI covers benchmark
-harness execution. LavinMQ TLS and thresholded performance gates remain
-future work.
+harness execution and positive JSON lane validation. LavinMQ TLS and
+normative thresholded performance gates remain future work.
 
 ---
 
@@ -373,8 +373,9 @@ and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 **Status.** Mitigated for checked no-broker, plain-AMQP broker,
 RabbitMQ TLS, backpressure, and Docker chaos surfaces by local
 doc-link/config-surface lint plus checked-in CI. Manual perf-smoke CI
-covers benchmark harness execution. LavinMQ TLS and thresholded
-performance claims remain future work.
+covers benchmark harness execution and positive JSON lane validation.
+LavinMQ TLS and normative thresholded performance claims remain future
+work.
 
 ---
 

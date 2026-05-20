@@ -524,7 +524,7 @@ Status: active working ledger for `amqp-ng`.
   - Cutline at this step: TLS broker, backpressure timing, Docker chaos, and performance gates remained outside the plain broker-smoke workflow; manual release-gate/perf workflows are tracked below.
 - [x] Add manual CI perf-smoke workflow.
   - Problem: `tools/perf_publish.cr` was type-checked in CI but never executed in a checked-in workflow, so harness breakage could survive normal specs.
-  - Progress: added `.github/workflows/perf-smoke.yml` as a `workflow_dispatch` job for RabbitMQ 3.13.7 and LavinMQ 2.4.0. It runs the existing benchmark harness with tiny default counts, prints JSON, and uploads per-broker artifacts.
+  - Progress: added `.github/workflows/perf-smoke.yml` as a `workflow_dispatch` job for RabbitMQ 3.13.7 and LavinMQ 2.4.0. It runs the existing benchmark harness with tiny default counts, validates required positive JSON lanes, prints JSON, and uploads per-broker artifacts.
   - Evidence: local RabbitMQ 3.13.7 low-count perf smoke exits 0 and emits benchmark JSON.
   - Evidence: local LavinMQ 2.4.0 low-count perf smoke exits 0 and emits benchmark JSON.
   - Cutline: this is a harness health check, not a throughput contract; thresholded `spec/perf/` remains future work.
@@ -542,3 +542,10 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local generated-cert RabbitMQ TLS gate verifies with `openssl s_client` and exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
   - Cutline: LavinMQ TLS and thresholded performance gates remain future work.
+- [x] Add positive-lane validation to the manual perf-smoke workflow.
+  - Problem: the manual perf-smoke workflow executed `tools/perf_publish.cr`, but it would still upload malformed or partially missing benchmark output if the process emitted structurally valid but incomplete JSON.
+  - Progress: added `tools/perf_smoke_assert.cr`. It parses the JSON artifact, requires the `amqp-ng publish microbench` tool marker, non-empty `metrics` and `stages`, required lanes such as `publish_single`, `confirm_sync`, and `encode_empty_publish_frames`, and positive sample/median floors.
+  - Evidence: malformed JSON and missing required lanes fail locally.
+  - Evidence: local RabbitMQ 3.13.7 low-count perf smoke plus assertion exits 0.
+  - Evidence: local LavinMQ 2.4.0 low-count perf smoke plus assertion exits 0.
+  - Cutline: this is a positive-lane smoke guard, not a normative `PERF-N` throughput contract; `spec/perf/` remains future work.
