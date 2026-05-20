@@ -17,7 +17,7 @@ ranked repair queue for converting the matrix into executable evidence.
 - Latest focused LavinMQ no-wait/API smoke passes: 39 examples, 0 failures, 0 errors, 0 pending.
 - The earlier local full opt-in suite passed before later parity additions; rerun it before turning this local branch into a public release artifact.
 - `tools/perf_publish.cr` now exists as a local publish benchmark witness, and the manual `Perf Smoke` workflow runs it against RabbitMQ/LavinMQ with tiny counts. Thresholded `spec/perf/` remains a roadmap item.
-- The manual `Release Gates` workflow runs the opt-in backpressure and Docker chaos specs against RabbitMQ/LavinMQ.
+- The manual `Release Gates` workflow provisions RabbitMQ TLS and runs the opt-in backpressure and Docker chaos specs against RabbitMQ/LavinMQ.
 - `Time.monotonic` deprecation warnings were removed.
 - `T-CODEC-CONTENT-006` now has a deterministic non-live channel content-assembly guard.
 - `T-CODEC-TYPES-016` now bounds nested field-array/table decode and encode recursion.
@@ -178,8 +178,9 @@ Converted falsifiers:
   `TlsHandshakeError` in the default no-broker suite.
 
 Remaining falsifiers:
-- Live TLS success, bad-CA, and expired-certificate rows remain
-  environment-gated through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`.
+- RabbitMQ live TLS success is covered by the manual `Release Gates`
+  workflow. Bad-CA and expired-certificate rows remain environment-gated
+  through `AMQP_TLS_URL` / `AMQP_TLS_CA_CERT`.
 
 ## Already Converted During This Review
 

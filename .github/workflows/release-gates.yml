@@ -7,6 +7,100 @@ permissions:
   contents: read
 
 jobs:
+  tls:
+    name: RabbitMQ 3.13.7 TLS gate
+    runs-on: ubuntu-latest
+
+    env:
+      AMQP_TLS_URL: amqps://guest:guest@localhost:5671/
+      AMQP_TLS_CA_CERT: .tmp/release-tls/certs/ca_certificate.pem
+      AMQP_TLS_DOCKER_CONTAINER: amqp-ng-release-rabbitmq-tls
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Generate TLS broker fixture
+        run: |
+          mkdir -p .tmp/release-tls/certs
+
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout .tmp/release-tls/certs/ca_key.pem \
+            -out .tmp/release-tls/certs/ca_certificate.pem \
+            -subj "/CN=amqp-ng release gate CA"
+
+          openssl genrsa -out .tmp/release-tls/certs/server_key.pem 2048
+          openssl req -new \
+            -key .tmp/release-tls/certs/server_key.pem \
+            -out .tmp/release-tls/certs/server.csr \
+            -subj "/CN=localhost"
+
+          cat > .tmp/release-tls/certs/server.ext <<'EOF'
+          subjectAltName=DNS:localhost,IP:127.0.0.1
+          extendedKeyUsage=serverAuth
+          EOF
+
+          openssl x509 -req -sha256 -days 1 \
+            -in .tmp/release-tls/certs/server.csr \
+            -CA .tmp/release-tls/certs/ca_certificate.pem \
+            -CAkey .tmp/release-tls/certs/ca_key.pem \
+            -CAcreateserial \
+            -out .tmp/release-tls/certs/server_certificate.pem \
+            -extfile .tmp/release-tls/certs/server.ext
+
+          chmod 644 .tmp/release-tls/certs/*.pem
+
+          cat > .tmp/release-tls/rabbitmq.conf <<'EOF'
+          listeners.tcp = none
+          listeners.ssl.default = 5671
+          ssl_options.cacertfile = /etc/rabbitmq/certs/ca_certificate.pem
+          ssl_options.certfile = /etc/rabbitmq/certs/server_certificate.pem
+          ssl_options.keyfile = /etc/rabbitmq/certs/server_key.pem
+          ssl_options.verify = verify_none
+          ssl_options.fail_if_no_peer_cert = false
+          EOF
+
+      - name: Start TLS broker container
+        run: |
+          docker run -d --rm \
+            --name "$AMQP_TLS_DOCKER_CONTAINER" \
+            -p 127.0.0.1:5671:5671 \
+            -v "$PWD/.tmp/release-tls/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro" \
+            -v "$PWD/.tmp/release-tls/certs:/etc/rabbitmq/certs:ro" \
+            rabbitmq:3.13.7
+
+      - name: Wait for TLS broker
+        run: |
+          for _ in $(seq 1 90); do
+            if openssl s_client \
+              -connect 127.0.0.1:5671 \
+              -servername localhost \
+              -CAfile "$AMQP_TLS_CA_CERT" \
+              </dev/null >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "TLS AMQP broker did not become reachable" >&2
+          docker logs "$AMQP_TLS_DOCKER_CONTAINER" || true
+          exit 1
+
+      - name: Run TLS gate
+        run: crystal spec spec/tls_spec.cr --error-trace
+
+      - name: Stop TLS broker container
+        if: always()
+        run: docker rm -f "$AMQP_TLS_DOCKER_CONTAINER" || true
+
   backpressure:
     name: ${{ matrix.broker }} backpressure gate
     runs-on: ubuntu-latest

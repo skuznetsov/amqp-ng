@@ -535,4 +535,10 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local RabbitMQ 3.13.7 backpressure gate exits 0: 7 examples, 0 failures; local chaos gate exits 0: 2 examples, 0 failures.
   - Evidence: local LavinMQ 2.4.0 backpressure gate exits 0: 7 examples, 0 failures; local chaos gate exits 0: 2 examples, 0 failures.
-  - Cutline: live TLS broker and thresholded performance gates remain future work.
+  - Cutline at this step: live TLS broker and thresholded performance gates remained future work; RabbitMQ TLS is tracked below.
+- [x] Add manual CI release gate for RabbitMQ TLS.
+  - Problem: `spec/tls_spec.cr` had an opt-in live TLS broker test, but the cert generation and RabbitMQ TLS provisioning steps were local scratch state under `.tmp/`.
+  - Progress: extended `.github/workflows/release-gates.yml` with a RabbitMQ TLS job. The job generates a one-day CA and localhost/127.0.0.1 server certificate, writes a test-only RabbitMQ TLS config, waits for `openssl s_client` verification, then runs `spec/tls_spec.cr` with `AMQP_TLS_URL` and `AMQP_TLS_CA_CERT`.
+  - Evidence: local workflow syntax parses as YAML.
+  - Evidence: local generated-cert RabbitMQ TLS gate verifies with `openssl s_client` and exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
+  - Cutline: LavinMQ TLS and thresholded performance gates remain future work.
