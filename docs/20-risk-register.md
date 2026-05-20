@@ -31,9 +31,10 @@ socket, TLS, or class/module-variable state.
 **Severity.** High (would break the entire shard on a Crystal upgrade).
 
 **Likelihood (post-mitigation).** Low in local/default specs. This
-still becomes stronger once checked-in CI runs the default spec suite.
+is backed by checked-in no-broker CI on pinned Crystal release lines.
 
-**Status.** Mitigated by design + local executable guard.
+**Status.** Mitigated by design, local executable guard, and checked-in
+no-broker CI.
 
 ---
 
@@ -324,7 +325,7 @@ environments.
 
 **Mitigation.** Local verification currently exercises the Homebrew
 release Crystal and the user's newer dev Crystal on focused gates.
-The checked-in tree does not contain a multi-version CI workflow.
+Checked-in no-broker CI runs on pinned Crystal 1.19.2 and 1.20.2.
 `T-API-DEPS-001` is implemented by `spec/dependency_hygiene_spec.cr`
 and rejects runtime dependencies in `shard.yml`; `T-CODEC-PURE-001`
 rejects private stdlib ivar reach-in and wire-codec side effects.
@@ -332,13 +333,12 @@ rejects private stdlib ivar reach-in and wire-codec side effects.
 **Severity.** Medium (would block the author's own use of the
 shard).
 
-**Likelihood.** Medium-low. Local dual-compiler checks catch recent
-drift, but the repository is not yet protected by checked-in
-multi-version CI.
+**Likelihood.** Low for the checked no-broker surface. Broker opt-in,
+TLS wrong-SAN, and performance paths still require separate gates.
 
-**Status.** Partially mitigated by local dual-compiler checks and
-local executable dependency/codec guards. CI-backed coverage remains
-to be added.
+**Status.** Mitigated for no-broker default specs and local tool
+type-checks on pinned Crystal 1.19.2/1.20.2. Broker-backed CI remains
+future work.
 
 ---
 
@@ -362,9 +362,9 @@ and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Partially mitigated by local doc-link and config-surface
-lint plus falsifier-first workflow. Checked-in CI enforcement is not
-present in the current tree.
+**Status.** Mitigated for the checked no-broker surface by local
+doc-link/config-surface lint plus checked-in CI. Broker-backed docs
+claims and opt-in gates remain future work.
 
 ---
 

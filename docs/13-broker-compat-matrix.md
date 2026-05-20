@@ -33,7 +33,7 @@ shard author for some workloads.
 
 The shard's behavior is validated locally against LavinMQ 2.4.0.
 Older LavinMQ 2.x releases MAY work, but they are not verified in the
-current checkout until a pinned multi-version CI matrix is added.
+current checkout until a pinned broker CI matrix is added.
 
 ---
 
@@ -203,8 +203,9 @@ Current local evidence in this checkout:
   pending examples as RabbitMQ; opt-in backpressure and Docker
   pause/restart chaos pass. LavinMQ TLS is not configured locally.
 
-A CI matrix for LavinMQ is not present yet; do not treat this document
-as proof that every commit is automatically checked against LavinMQ.
+A checked-in no-broker Crystal-version CI workflow exists, but a broker
+matrix for LavinMQ is not present yet; do not treat this document as
+proof that every commit is automatically checked against LavinMQ.
 
 ---
 

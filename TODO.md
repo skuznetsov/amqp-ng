@@ -454,7 +454,7 @@ Status: active working ledger for `amqp-ng`.
 - [x] Calibrate the risk register against current checked-in evidence.
   - Problem: `docs/20-risk-register.md` still claimed checked-in CI and implemented falsifiers for several areas where the tree only has design intent, local specs, or opt-in harnesses.
   - Progress: downgraded stdlib ivar scanning, wrong-SAN TLS hostname failure, malicious-peer body-size/depth caps, multi-version Crystal CI, and doc-drift CI enforcement from "mitigated" claims to source-grounded partial/open status.
-  - Evidence: current tree has no `.github` workflow; `spec/tls_spec.cr` covers TLS config and opt-in success but not wrong-SAN failure; `spec/docs_falsifier_link_spec.cr` is local doc-link lint; frame/type specs cover per-frame and tag guards, not total-message/depth caps.
+  - Evidence: at calibration time the tree had no `.github` workflow; `spec/tls_spec.cr` covered TLS config and opt-in success but not wrong-SAN failure; `spec/docs_falsifier_link_spec.cr` was local doc-link lint; frame/type specs covered per-frame and tag guards, not total-message/depth caps.
   - Cutline: this is docs calibration only; adding the missing executable guards remains a separate implementation task.
 - [x] Implement `T-CODEC-PURE-001` as a local executable hygiene guard.
   - Progress: added `spec/code_hygiene_spec.cr` to reject direct private-ivar reach-in across `src` and `spec`, and to keep `src/amqp/wire` free of fibers, sockets, TLS, and class/module-variable state.
@@ -502,4 +502,11 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: dev Crystal `crystal spec spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
-  - Cutline: this is local enforcement; checked-in CI remains a separate future work item.
+  - Cutline: checked-in no-broker CI now covers this guard; broker-backed docs/config gates remain future work.
+- [x] Add checked-in no-broker CI for pinned Crystal versions.
+  - Problem: RISK-14 and RISK-15 still depended on local-only verification for default specs, format, docs/config drift guards, dependency guards, and tool type-checks.
+  - Progress: added `.github/workflows/ci.yml` with a no-broker matrix pinned to Crystal 1.19.2 and 1.20.2. The workflow runs `shards install`, format check, full no-broker specs, and no-codegen builds for `tools/perf_publish.cr` and `tools/capture_proxy.cr`.
+  - Evidence: local workflow syntax parses as YAML.
+  - Evidence: local matching release gate `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
+  - Evidence: local format check, `tools/perf_publish.cr --release --no-codegen`, `tools/capture_proxy.cr --no-codegen`, and `git diff --check` exit 0.
+  - Cutline: broker-backed, TLS wrong-SAN, and performance CI remain future work.

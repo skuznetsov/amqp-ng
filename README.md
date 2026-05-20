@@ -286,6 +286,8 @@ crystal spec --error-trace
 Latest no-broker result: `228 examples, 0 failures, 0 errors, 92 pending`.
 Most pending examples are live-broker specs that intentionally skip when
 `AMQP_URL` is unreachable.
+Checked-in no-broker CI runs this gate, format checks, and local tool
+type-checks on pinned Crystal 1.19.2 and 1.20.2.
 
 Latest focused LavinMQ publish/confirm smoke:
 `72 examples, 0 failures, 0 errors, 0 pending` for

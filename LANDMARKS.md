@@ -20,6 +20,8 @@ Verified anchors and reusable refutations for `amqp-ng`.
 
 - [LM-004E|guard] URI query-key docs now have an executable drift guard: `spec/docs_falsifier_link_spec.cr` compares `docs/04-uri-and-config.md` and README query-key lists with `Amqp::Config::RECOGNIZED_QUERY_KEYS`. Evidence: release and dev Crystal focused docs falsifier spec pass with 4 examples; full no-broker baseline is 228 examples. Trust `{F:0.9,G:0.75,R:0.9}`. Status: verified 2026-05-19; decay trigger: config query surface or public config docs changes.
 
+- [LM-004F|guard] Checked-in no-broker CI now covers pinned Crystal 1.19.2 and 1.20.2 for `shards install`, format, full no-broker specs, and no-codegen tool builds. Evidence: `.github/workflows/ci.yml`; local workflow YAML parse passes; local matching 1.20.1 release gate passes with 228 examples. Trust `{F:0.78,G:0.62,R:0.74}`. Status: configured 2026-05-19; decay trigger: GitHub Actions runner image, `crystal-lang/install-crystal`, Crystal release pins, or CI workflow changes.
+
 - [LM-005|goal] Current working slice is "bring the public API and behavioral specs into alignment before expanding implementation". Evidence: user request to align API to docs and then quadrumvirate missing spec risks. Trust `{F:0.6,G:0.8,R:0.7}`. Status: active; decay trigger: user changes project priority.
 
 - [LM-006|refute] The documented `select when msg = sub.receive` contract was false before this review: compiler reported `undefined method 'receive_select_action' for Amqp::Subscription`. Fixed by delegating select actions to the internal mailbox and adding `spec/api_surface_spec.cr` coverage. Trust `{F:1.0,G:0.8,R:1.0}`. Status: verified 2026-05-15; decay trigger: Subscription receive/select implementation changes.
