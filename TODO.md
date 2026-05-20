@@ -497,6 +497,13 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: dev Crystal `crystal spec spec/config_spec.cr spec/channel_spec.cr --error-trace` exits 0: 41 examples, 0 failures, 0 errors, 27 pending.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Cutline: aggregate per-connection/per-process memory budgets remain future work.
+- [x] Bound per-connection in-flight content body assembly bytes.
+  - Problem: `max_body_size` limited each message, but two or more channels on one connection could reserve multiple large content bodies concurrently.
+  - Progress: added `Config#max_inflight_body_bytes`, URI/keyword parsing with positive `UInt64` validation, and a connection-level reservation counter used while channels assemble inbound content bodies. The default is `4 * max_body_size`.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/config_spec.cr spec/channel_spec.cr --error-trace` exits 0: 46 examples, 0 failures, 0 errors, 27 pending.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/docs_falsifier_link_spec.cr --error-trace` exits 0: 4 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 234 examples, 0 failures, 0 errors, 92 pending.
+  - Cutline: bytes already delivered into consumer mailboxes and per-process memory budgets remain future work.
 - [x] Add local config/docs URI query-key drift guard.
   - Problem: config surface changes touch `Config::RECOGNIZED_QUERY_KEYS`, `docs/04-uri-and-config.md`, and the README; this drift was only manually checked.
   - Progress: extended `spec/docs_falsifier_link_spec.cr` so docs/04 and README query-key lists must match `Amqp::Config::RECOGNIZED_QUERY_KEYS`.

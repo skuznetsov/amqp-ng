@@ -298,21 +298,25 @@ decoder.
 **Mitigation.** The frame reader rejects unknown frame types, bad
 frame-end bytes, and payloads larger than `frame_max - 8`. Channel
 content assembly rejects body frames that overflow the declared content
-body size and rejects content headers whose declared body-size exceeds
-the configured `max_body_size` cap. The field codec rejects unsupported
-decimal tags and unknown field-value tags, and bounds nested
-field-array/table decode to 32 recursive container levels.
+body size, rejects content headers whose declared body-size exceeds the
+configured `max_body_size` cap, and reserves declared content body sizes
+against `max_inflight_body_bytes` while bodies are being assembled on
+one connection. The field codec rejects unsupported decimal tags and
+unknown field-value tags, and bounds nested field-array/table decode to
+32 recursive container levels.
 
-The current implementation does not enforce an aggregate per-connection
-or per-process memory budget; several concurrent capped deliveries can
-still consume memory up to their individual caps.
+The current implementation does not enforce a per-process budget or a
+budget for bytes already handed to consumer mailboxes; several queued
+deliveries can still consume memory after assembly completes.
 
 **Severity.** High (DoS by malicious broker).
 
 **Likelihood.** Very low against trusted brokers.
 
 **Status.** Mitigated for per-frame size, per-message content body
-size, and field nesting. Aggregate memory budgets remain future work.
+size, per-connection in-flight body assembly, and field nesting.
+Per-process and consumer-mailbox aggregate memory budgets remain future
+work.
 
 ---
 

@@ -70,6 +70,8 @@ module Amqp
     @close_reason : Exception?
     @recovery_mutex : Mutex
     @recovery_active : Bool
+    @inflight_body_mutex : Mutex
+    @inflight_body_bytes : UInt64
     @on_blocked : BlockedCallback?
     @on_unblocked : UnblockedCallback?
     getter server_properties : Amqp::Arguments
@@ -93,6 +95,8 @@ module Amqp
       @close_reason = nil
       @recovery_mutex = Mutex.new
       @recovery_active = false
+      @inflight_body_mutex = Mutex.new
+      @inflight_body_bytes = 0_u64
       @on_blocked = nil
       @on_unblocked = nil
       @server_properties = Amqp::Arguments.new
@@ -481,6 +485,28 @@ module Amqp
 
     protected def lookup_channel(id : UInt16) : Channel?
       @channels_mutex.synchronize { @channels[id]? }
+    end
+
+    protected def reserve_inflight_body_bytes(size : UInt64) : Nil
+      return if size == 0
+
+      @inflight_body_mutex.synchronize do
+        limit = @config.max_inflight_body_bytes
+        if size > limit || @inflight_body_bytes > limit - size
+          raise ProtocolError.new(
+            "connection inbound body budget exceeded: #{@inflight_body_bytes} + #{size} > #{limit}"
+          )
+        end
+        @inflight_body_bytes += size
+      end
+    end
+
+    protected def release_inflight_body_bytes(size : UInt64) : Nil
+      return if size == 0
+
+      @inflight_body_mutex.synchronize do
+        @inflight_body_bytes = size >= @inflight_body_bytes ? 0_u64 : @inflight_body_bytes - size
+      end
     end
 
     # ---- Reader loop ----------------------------------------------------

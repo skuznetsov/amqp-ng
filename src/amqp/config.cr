@@ -10,6 +10,7 @@ module Amqp
       "channel_max",
       "frame_max",
       "max_body_size",
+      "max_inflight_body_bytes",
       "connect_timeout",
       "tcp_nodelay",
       "buffer_size",
@@ -28,6 +29,7 @@ module Amqp
     getter channel_max : UInt16
     getter frame_max : UInt32
     getter max_body_size : UInt64
+    getter max_inflight_body_bytes : UInt64
     getter connect_timeout : Time::Span
     getter? tcp_nodelay : Bool
     getter buffer_size : Int32
@@ -40,7 +42,7 @@ module Amqp
     getter tls_context : OpenSSL::SSL::Context::Client?
 
     def initialize(@scheme, @host, @port, @user, @password, @vhost,
-                   @heartbeat, @channel_max, @frame_max, @max_body_size,
+                   @heartbeat, @channel_max, @frame_max, @max_body_size, @max_inflight_body_bytes,
                    @connect_timeout, @tcp_nodelay, @buffer_size, @product, @information,
                    @recovery = false,
                    @recovery_max_attempts = 5,
@@ -52,6 +54,9 @@ module Amqp
       end
       if @max_body_size == 0
         raise ConfigurationError.new("max_body_size must be positive")
+      end
+      if @max_inflight_body_bytes == 0
+        raise ConfigurationError.new("max_inflight_body_bytes must be positive")
       end
     end
 
@@ -68,6 +73,7 @@ module Amqp
                    channel_max : UInt16? = nil,
                    frame_max : UInt32? = nil,
                    max_body_size : UInt64? = nil,
+                   max_inflight_body_bytes : UInt64? = nil,
                    connect_timeout : Time::Span? = nil,
                    tcp_nodelay : Bool? = nil,
                    buffer_size : Int32? = nil,
@@ -102,12 +108,15 @@ module Amqp
       eff_channel_max = channel_max || query_u16(query["channel_max"]?)
       eff_frame_max = frame_max || query_u32(query["frame_max"]?)
       eff_max_body_size = max_body_size || query_u64_positive(query["max_body_size"]?)
+      eff_max_inflight_body_bytes = max_inflight_body_bytes || query_u64_positive(query["max_inflight_body_bytes"]?)
       eff_connect_timeout = connect_timeout || query_span_seconds(query["connect_timeout"]?)
       eff_tcp_nodelay = tcp_nodelay.nil? ? query_bool(query["tcp_nodelay"]?) : tcp_nodelay
       eff_buffer_size = buffer_size || query_i32_nonnegative(query["buffer_size"]?)
       eff_recovery = recovery.nil? ? query_recovery(query["recovery"]?) : parse_recovery(recovery)
       eff_product = product || query["product"]?
       eff_information = information || query["information"]?
+
+      final_max_body_size = eff_max_body_size || 64_u64 * 1024_u64 * 1024_u64
 
       new(
         scheme: scheme,
@@ -119,7 +128,8 @@ module Amqp
         heartbeat: eff_heartbeat || 60.seconds,
         channel_max: eff_channel_max || 2047_u16,
         frame_max: eff_frame_max || 131_072_u32,
-        max_body_size: eff_max_body_size || 64_u64 * 1024_u64 * 1024_u64,
+        max_body_size: final_max_body_size,
+        max_inflight_body_bytes: eff_max_inflight_body_bytes || default_max_inflight_body_bytes(final_max_body_size),
         connect_timeout: eff_connect_timeout || 30.seconds,
         tcp_nodelay: eff_tcp_nodelay || false,
         buffer_size: eff_buffer_size || 16_384,
@@ -145,6 +155,14 @@ module Amqp
         unless RECOGNIZED_QUERY_KEYS.includes?(key)
           raise UriError.new("unknown URI query key '#{key}' (recognized: #{RECOGNIZED_QUERY_KEYS.join(", ")})")
         end
+      end
+    end
+
+    private def self.default_max_inflight_body_bytes(max_body_size : UInt64) : UInt64
+      if max_body_size > UInt64::MAX // 4
+        UInt64::MAX
+      else
+        max_body_size * 4
       end
     end
 

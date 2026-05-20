@@ -133,6 +133,7 @@ module Amqp
     @pending_props : Properties?
     @pending_body_size : UInt64
     @pending_body_received : UInt64
+    @pending_body_reserved_size : UInt64
     @pending_body : IO::Memory
     @pending_body_direct : Bytes?
     @close_reason : Exception?
@@ -200,6 +201,7 @@ module Amqp
       @pending_props = nil
       @pending_body_size = 0_u64
       @pending_body_received = 0_u64
+      @pending_body_reserved_size = 0_u64
       @pending_body = IO::Memory.new
       @pending_body_direct = nil
       @close_reason = nil
@@ -2573,9 +2575,26 @@ module Amqp
     end
 
     private def reset_pending_body_state : Nil
+      release_pending_body_budget
+      @pending_props = nil
+      @pending_body_size = 0_u64
       @pending_body.clear
       @pending_body_direct = nil
       @pending_body_received = 0_u64
+    end
+
+    private def reserve_pending_body_budget(size : UInt64) : Nil
+      release_pending_body_budget
+      @connection.reserve_inflight_body_bytes(size)
+      @pending_body_reserved_size = size
+    end
+
+    private def release_pending_body_budget : Nil
+      size = @pending_body_reserved_size
+      return if size == 0
+
+      @pending_body_reserved_size = 0_u64
+      @connection.release_inflight_body_bytes(size)
     end
 
     private def register_consumer(tag : String, sub : Subscription) : Nil
@@ -2722,6 +2741,7 @@ module Amqp
       if body_size > max_body_size
         raise ProtocolError.new("channel #{@id}: declared body size #{body_size} exceeds max_body_size #{max_body_size}")
       end
+      reserve_pending_body_budget(body_size)
       @pending_props = properties
       @pending_body_size = body_size
       @pending_body_received = 0_u64
@@ -2739,6 +2759,7 @@ module Amqp
       end
       @pending_body_received += frame.payload.size.to_u64
       if @pending_body_received > @pending_body_size
+        reset_pending_body_state
         raise ProtocolError.new("channel #{@id}: body fragment overflows declared size")
       end
       if @pending_body_received == @pending_body_size
@@ -2751,10 +2772,12 @@ module Amqp
       props = @pending_props || EMPTY_PROPERTIES
       body_direct = @pending_body_direct
       body_bytes = body_direct || @pending_body.to_slice
+      reserved_size = @pending_body_reserved_size
       @pending_method = nil
       @pending_props = nil
       @pending_body_size = 0_u64
       @pending_body_received = 0_u64
+      @pending_body_reserved_size = 0_u64
       @pending_body_direct = nil
       if body_direct || @pending_body.empty?
         @pending_body.clear
@@ -2762,43 +2785,47 @@ module Amqp
         @pending_body = IO::Memory.new
       end
 
-      case method
-      in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver
-        delivery = Delivery.new(
-          consumer_tag: method.consumer_tag,
-          delivery_tag: method.delivery_tag,
-          redelivered: method.redelivered,
-          exchange: method.exchange,
-          routing_key: method.routing_key,
-          properties: props,
-          body: body_bytes,
-          channel: self,
-        )
-        sub = consumer_for(method.consumer_tag)
-        sub.try &.deliver(delivery)
-        @connection.stats.incr_consumed
-      in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return
-        emit_return(method, props, body_bytes)
-        @connection.stats.incr_returned
-      in Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk
-        msg = GetMessage.new(
-          body: body_bytes,
-          properties: props,
-          delivery_tag: method.delivery_tag,
-          redelivered: method.redelivered,
-          exchange: method.exchange,
-          routing_key: method.routing_key,
-          message_count: method.message_count,
-          channel: self,
-        )
-        slot = @get_slot
-        if slot
-          slot.send(msg)
-        else
-          raise ProtocolError.new("channel #{@id}: unsolicited basic.get-ok content")
+      begin
+        case method
+        in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Deliver
+          delivery = Delivery.new(
+            consumer_tag: method.consumer_tag,
+            delivery_tag: method.delivery_tag,
+            redelivered: method.redelivered,
+            exchange: method.exchange,
+            routing_key: method.routing_key,
+            properties: props,
+            body: body_bytes,
+            channel: self,
+          )
+          sub = consumer_for(method.consumer_tag)
+          sub.try &.deliver(delivery)
+          @connection.stats.incr_consumed
+        in Amqp::Wire::AmqpZeroNineOne::BasicMethods::Return
+          emit_return(method, props, body_bytes)
+          @connection.stats.incr_returned
+        in Amqp::Wire::AmqpZeroNineOne::BasicMethods::GetOk
+          msg = GetMessage.new(
+            body: body_bytes,
+            properties: props,
+            delivery_tag: method.delivery_tag,
+            redelivered: method.redelivered,
+            exchange: method.exchange,
+            routing_key: method.routing_key,
+            message_count: method.message_count,
+            channel: self,
+          )
+          slot = @get_slot
+          if slot
+            slot.send(msg)
+          else
+            raise ProtocolError.new("channel #{@id}: unsolicited basic.get-ok content")
+          end
+        in Nil
+          # nothing
         end
-      in Nil
-        # nothing
+      ensure
+        @connection.release_inflight_body_bytes(reserved_size)
       end
     end
 
@@ -3014,6 +3041,7 @@ module Amqp
       @state = State::Closed
       @close_reason ||= reason
       notify_sync_failure(reason)
+      reset_pending_body_state
       callbacks = [] of ConfirmCallback
       @consumers_mutex.synchronize do
         @consumers.each_value(&.mark_closed)
@@ -3055,9 +3083,7 @@ module Amqp
         "channel #{@id} recovery triggered: #{reason.message}"
       ))
       @pending_method = nil
-      @pending_props = nil
-      @pending_body_size = 0_u64
-      @pending_body_received = 0_u64
+      reset_pending_body_state
       @pending_body = IO::Memory.new
 
       @consumers_mutex.synchronize do

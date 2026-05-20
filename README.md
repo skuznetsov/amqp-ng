@@ -339,6 +339,7 @@ Supported URI query keys in v0:
 - `channel_max`
 - `frame_max`
 - `max_body_size`
+- `max_inflight_body_bytes`
 - `connect_timeout`
 - `recovery`
 - `product`

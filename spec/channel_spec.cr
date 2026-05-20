@@ -4,11 +4,19 @@ class Amqp::Connection
   def self.__spec_new(config : Amqp::Config = Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/")) : Amqp::Connection
     new(config)
   end
+
+  def __spec_inflight_body_bytes : UInt64
+    @inflight_body_mutex.synchronize { @inflight_body_bytes }
+  end
 end
 
 class Amqp::Channel
   def self.__spec_new(id : UInt16 = 1_u16, config : Amqp::Config = Amqp::Config.parse("amqp://guest:guest@127.0.0.1:5672/")) : Amqp::Channel
     new(Amqp::Connection.__spec_new(config), id)
+  end
+
+  def self.__spec_new(id : UInt16, connection : Amqp::Connection) : Amqp::Channel
+    new(connection, id)
   end
 
   def __spec_set_flow_active(active : Bool) : Nil
@@ -30,6 +38,14 @@ class Amqp::Channel
   def __spec_process_content_body_frame(frame : Amqp::Wire::Frame) : Nil
     process_body_frame(frame)
   end
+
+  def __spec_abort_with(reason : Exception = Amqp::SocketError.new("spec abort")) : Nil
+    abort_with(reason)
+  end
+
+  def __spec_enter_recovery(reason : Exception = Amqp::SocketError.new("spec recovery")) : Nil
+    enter_recovery(reason)
+  end
 end
 
 private def basic_deliver_payload : Bytes
@@ -42,6 +58,18 @@ private def basic_deliver_payload : Bytes
   Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, "")
   Amqp::Wire::AmqpZeroNineOne::Types.write_shortstr(io, "queue-a")
   io.to_slice
+end
+
+private def content_header_frame(channel_id : UInt16, body_size : UInt64) : Amqp::Wire::Frame
+  Amqp::Wire::Frame.new(
+    Amqp::Wire::FrameType::Header,
+    channel_id,
+    Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+      Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+      body_size,
+      Amqp::Properties.new
+    )
+  )
 end
 
 describe Amqp::Channel do
@@ -106,6 +134,104 @@ describe Amqp::Channel do
           )
         )
       end
+    end
+
+    it "rejects content headers that exceed the per-connection in-flight body budget" do
+      connection = Amqp::Connection.__spec_new(
+        Amqp::Config.parse(
+          "amqp://guest:guest@127.0.0.1:5672/",
+          max_body_size: 8_u64,
+          max_inflight_body_bytes: 6_u64
+        )
+      )
+      channel_a = Amqp::Channel.__spec_new(1_u16, connection)
+      channel_b = Amqp::Channel.__spec_new(2_u16, connection)
+
+      channel_a.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, basic_deliver_payload)
+      )
+      channel_a.__spec_process_content_header_frame(content_header_frame(1_u16, 4_u64))
+      connection.__spec_inflight_body_bytes.should eq(4_u64)
+
+      channel_b.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 2_u16, basic_deliver_payload)
+      )
+      expect_raises(Amqp::ProtocolError, /inbound body budget exceeded/) do
+        channel_b.__spec_process_content_header_frame(content_header_frame(2_u16, 3_u64))
+      end
+      connection.__spec_inflight_body_bytes.should eq(4_u64)
+
+      channel_a.__spec_process_content_body_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, 1_u16, Bytes[1, 2, 3, 4])
+      )
+      connection.__spec_inflight_body_bytes.should eq(0_u64)
+
+      channel_b.__spec_process_content_header_frame(content_header_frame(2_u16, 3_u64))
+      connection.__spec_inflight_body_bytes.should eq(3_u64)
+    end
+
+    it "releases the in-flight body budget when a body fragment overflows" do
+      connection = Amqp::Connection.__spec_new(
+        Amqp::Config.parse(
+          "amqp://guest:guest@127.0.0.1:5672/",
+          max_body_size: 8_u64,
+          max_inflight_body_bytes: 8_u64
+        )
+      )
+      channel = Amqp::Channel.__spec_new(1_u16, connection)
+
+      channel.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, basic_deliver_payload)
+      )
+      channel.__spec_process_content_header_frame(content_header_frame(1_u16, 4_u64))
+      connection.__spec_inflight_body_bytes.should eq(4_u64)
+
+      expect_raises(Amqp::ProtocolError, /body fragment overflows declared size/) do
+        channel.__spec_process_content_body_frame(
+          Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Body, 1_u16, Bytes[1, 2, 3, 4, 5])
+        )
+      end
+      connection.__spec_inflight_body_bytes.should eq(0_u64)
+    end
+
+    it "releases the in-flight body budget when the channel closes mid-content" do
+      connection = Amqp::Connection.__spec_new(
+        Amqp::Config.parse(
+          "amqp://guest:guest@127.0.0.1:5672/",
+          max_body_size: 8_u64,
+          max_inflight_body_bytes: 8_u64
+        )
+      )
+      channel = Amqp::Channel.__spec_new(1_u16, connection)
+
+      channel.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, basic_deliver_payload)
+      )
+      channel.__spec_process_content_header_frame(content_header_frame(1_u16, 4_u64))
+      connection.__spec_inflight_body_bytes.should eq(4_u64)
+
+      channel.__spec_abort_with
+      connection.__spec_inflight_body_bytes.should eq(0_u64)
+    end
+
+    it "releases the in-flight body budget when recovery resets channel state" do
+      connection = Amqp::Connection.__spec_new(
+        Amqp::Config.parse(
+          "amqp://guest:guest@127.0.0.1:5672/",
+          max_body_size: 8_u64,
+          max_inflight_body_bytes: 8_u64
+        )
+      )
+      channel = Amqp::Channel.__spec_new(1_u16, connection)
+
+      channel.__spec_process_content_method_frame(
+        Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, basic_deliver_payload)
+      )
+      channel.__spec_process_content_header_frame(content_header_frame(1_u16, 4_u64))
+      connection.__spec_inflight_body_bytes.should eq(4_u64)
+
+      channel.__spec_enter_recovery
+      connection.__spec_inflight_body_bytes.should eq(0_u64)
     end
   end
 
