@@ -335,16 +335,17 @@ rejects private stdlib ivar reach-in and wire-codec side effects.
 **Severity.** Medium (would block the author's own use of the
 shard).
 
-**Likelihood.** Low for checked no-broker and plain-AMQP broker
-surfaces. The benchmark harness has a manual CI smoke, but thresholded
-performance, TLS live-broker, backpressure timing, and chaos paths
+**Likelihood.** Low for checked no-broker, plain-AMQP broker,
+backpressure, and Docker chaos surfaces. The benchmark harness has a
+manual CI smoke, but thresholded performance and TLS live-broker paths
 still require separate gates.
 
 **Status.** Mitigated for no-broker default specs and local tool
 type-checks on pinned Crystal 1.19.2/1.20.2, plus plain-AMQP
 RabbitMQ 3.13.7 and LavinMQ 2.4.0 live specs on Crystal 1.20.2.
-Manual perf-smoke CI covers benchmark harness execution. Opt-in
-broker and thresholded performance gates remain future work.
+Manual release-gate CI covers backpressure and Docker chaos against
+both brokers. Manual perf-smoke CI covers benchmark harness execution.
+TLS live-broker and thresholded performance gates remain future work.
 
 ---
 
@@ -368,10 +369,10 @@ and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Mitigated for checked no-broker and plain-AMQP broker
-surfaces by local doc-link/config-surface lint plus checked-in CI.
-Manual perf-smoke CI covers benchmark harness execution. Opt-in
-TLS/backpressure/chaos and thresholded performance claims remain
+**Status.** Mitigated for checked no-broker, plain-AMQP broker,
+backpressure, and Docker chaos surfaces by local doc-link/config-surface
+lint plus checked-in CI. Manual perf-smoke CI covers benchmark harness
+execution. TLS live-broker and thresholded performance claims remain
 future work.
 
 ---

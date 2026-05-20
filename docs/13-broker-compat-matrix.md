@@ -204,8 +204,10 @@ Current local evidence in this checkout:
   pause/restart chaos pass. LavinMQ TLS is not configured locally.
 
 A checked-in plain-AMQP broker CI matrix covers RabbitMQ 3.13.7 and
-LavinMQ 2.4.0 on Crystal 1.20.2. TLS, backpressure timing, Docker
-chaos, and performance gates remain opt-in/local release checks.
+LavinMQ 2.4.0 on Crystal 1.20.2. A manual `Release Gates` workflow
+covers the backpressure timing and Docker chaos gates against both
+brokers. TLS live-broker and thresholded performance gates remain
+opt-in/local release checks.
 
 ---
 

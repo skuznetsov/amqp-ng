@@ -11,14 +11,12 @@ module SpecHelper
     ENV[AMQP_URL_ENV]? || DEFAULT_URL
   end
 
-  # Returns true if a TCP connection to the broker is accepted.
-  # Specs that require a live broker should skip when this is false.
+  # Returns true only after a minimal AMQP session can be opened.
+  # RabbitMQ can accept TCP before the AMQP application is ready; treating
+  # that as reachable makes live specs fail with handshake EOF races.
   def broker_reachable? : Bool
-    uri = URI.parse(amqp_url)
-    host = uri.host || "127.0.0.1"
-    port = uri.port || 5672
-    sock = TCPSocket.new(host, port, connect_timeout: 0.5.seconds)
-    sock.close
+    conn = Amqp.connect(amqp_url, heartbeat: 0.seconds, connect_timeout: 0.5.seconds)
+    conn.close
     true
   rescue
     false

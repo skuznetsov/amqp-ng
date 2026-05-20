@@ -8,7 +8,8 @@ branch.
 
 Current status: **v0.1.0 local release branch**. It is usable as a path
 dependency today. Publishing a public shard release should still re-run
-the opt-in TLS, chaos, backpressure, and performance gates listed below.
+the TLS live-broker, manual release-gate, and performance checks listed
+below.
 
 ## Why This Exists
 
@@ -163,8 +164,8 @@ end
 
 | Broker | Current evidence |
 | --- | --- |
-| RabbitMQ 3.13.x | Default suite green locally; opt-in TLS/backpressure/chaos gate has passed on the project-owned containers |
-| LavinMQ 2.4.0 | Default and opt-in plain-AMQP backpressure/chaos gates passed in the release baseline; TLS remains deferred |
+| RabbitMQ 3.13.x | Default suite green locally; manual CI covers plain-AMQP, backpressure, and Docker chaos gates; opt-in TLS has passed on the project-owned container |
+| LavinMQ 2.4.0 | Default suite green locally; manual CI covers plain-AMQP, backpressure, and Docker chaos gates; TLS remains deferred |
 
 The default suite leaves broker-destructive or environment-specific specs
 pending unless you set the corresponding env vars:
@@ -318,10 +319,11 @@ are environment gated:
 - Subscription backpressure timing via `AMQP_BACKPRESSURE_LIVE`.
 - Broker pause/restart chaos via `AMQP_CHAOS_DOCKER_CONTAINER`.
 
-The checked-in broker CI covers the plain-AMQP live surface. The manual
-`Perf Smoke` workflow covers benchmark harness execution. TLS,
-backpressure timing, chaos, and thresholded performance gates remain
-opt-in/local release checks.
+The checked-in broker CI covers the plain-AMQP live surface. Manual
+`Release Gates` workflow jobs cover the backpressure and Docker chaos
+gates for RabbitMQ/LavinMQ. The manual `Perf Smoke` workflow covers
+benchmark harness execution. TLS live-broker and thresholded
+performance gates remain opt-in/local release checks.
 
 ## URI And Config
 
@@ -385,8 +387,7 @@ Compatibility notes:
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
 - LavinMQ TLS gate.
-- Checked-in CI for TLS, backpressure, chaos, and thresholded
-  performance gates.
+- Checked-in CI for TLS live-broker and thresholded performance gates.
 - `spec/perf/` reproducible benchmark suite.
 - Broader reliability transcript corpus.
 - WebSocket transport.

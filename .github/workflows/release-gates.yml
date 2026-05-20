@@ -1,0 +1,113 @@
+name: Release Gates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backpressure:
+    name: ${{ matrix.broker }} backpressure gate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - broker: RabbitMQ 3.13.7
+            image: rabbitmq:3.13.7
+          - broker: LavinMQ 2.4.0
+            image: cloudamqp/lavinmq:2.4.0
+    services:
+      amqp:
+        image: ${{ matrix.image }}
+        ports:
+          - 5672:5672
+
+    env:
+      AMQP_URL: amqp://guest:guest@127.0.0.1:5672/
+      AMQP_BACKPRESSURE_LIVE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Wait for broker
+        run: |
+          for _ in $(seq 1 90); do
+            if crystal eval 'require "./spec/spec_helper"; exit(SpecHelper.broker_reachable? ? 0 : 1)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "AMQP broker did not become reachable" >&2
+          exit 1
+
+      - name: Run backpressure gate
+        run: crystal spec spec/subscription_spec.cr --error-trace
+
+  chaos:
+    name: ${{ matrix.broker }} chaos gate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - broker: RabbitMQ 3.13.7
+            slug: rabbitmq
+            image: rabbitmq:3.13.7
+          - broker: LavinMQ 2.4.0
+            slug: lavinmq
+            image: cloudamqp/lavinmq:2.4.0
+
+    env:
+      AMQP_URL: amqp://guest:guest@127.0.0.1:5672/
+      AMQP_CHAOS_DOCKER_CONTAINER: amqp-ng-release-${{ matrix.slug }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Start broker container
+        run: |
+          docker run -d --rm \
+            --name "$AMQP_CHAOS_DOCKER_CONTAINER" \
+            -p 127.0.0.1:5672:5672 \
+            "${{ matrix.image }}"
+
+      - name: Wait for broker
+        run: |
+          for _ in $(seq 1 90); do
+            if crystal eval 'require "./spec/spec_helper"; exit(SpecHelper.broker_reachable? ? 0 : 1)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "AMQP broker did not become reachable" >&2
+          docker logs "$AMQP_CHAOS_DOCKER_CONTAINER" || true
+          exit 1
+
+      - name: Run chaos gate
+        run: crystal spec spec/chaos_spec.cr --error-trace
+
+      - name: Stop broker container
+        if: always()
+        run: docker rm -f "$AMQP_CHAOS_DOCKER_CONTAINER" || true
