@@ -101,6 +101,92 @@ jobs:
         if: always()
         run: docker rm -f "$AMQP_TLS_DOCKER_CONTAINER" || true
 
+  lavinmq-tls:
+    name: LavinMQ 2.4.0 TLS gate
+    runs-on: ubuntu-latest
+
+    env:
+      AMQP_TLS_URL: amqps://guest:guest@localhost:5671/
+      AMQP_TLS_CA_CERT: .tmp/release-lavinmq-tls/certs/ca_certificate.pem
+      AMQP_TLS_DOCKER_CONTAINER: amqp-ng-release-lavinmq-tls
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.2
+
+      - name: Show Crystal version
+        run: crystal --version
+
+      - name: Install shards
+        run: shards install
+
+      - name: Generate TLS broker fixture
+        run: |
+          mkdir -p .tmp/release-lavinmq-tls/certs
+
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout .tmp/release-lavinmq-tls/certs/ca_key.pem \
+            -out .tmp/release-lavinmq-tls/certs/ca_certificate.pem \
+            -subj "/CN=amqp-ng LavinMQ release gate CA"
+
+          openssl genrsa -out .tmp/release-lavinmq-tls/certs/server_key.pem 2048
+          openssl req -new \
+            -key .tmp/release-lavinmq-tls/certs/server_key.pem \
+            -out .tmp/release-lavinmq-tls/certs/server.csr \
+            -subj "/CN=localhost"
+
+          cat > .tmp/release-lavinmq-tls/certs/server.ext <<'EOF'
+          subjectAltName=DNS:localhost,IP:127.0.0.1
+          extendedKeyUsage=serverAuth
+          EOF
+
+          openssl x509 -req -sha256 -days 1 \
+            -in .tmp/release-lavinmq-tls/certs/server.csr \
+            -CA .tmp/release-lavinmq-tls/certs/ca_certificate.pem \
+            -CAkey .tmp/release-lavinmq-tls/certs/ca_key.pem \
+            -CAcreateserial \
+            -out .tmp/release-lavinmq-tls/certs/server_certificate.pem \
+            -extfile .tmp/release-lavinmq-tls/certs/server.ext
+
+          chmod 644 .tmp/release-lavinmq-tls/certs/*.pem
+
+      - name: Start TLS broker container
+        run: |
+          docker run -d --rm \
+            --name "$AMQP_TLS_DOCKER_CONTAINER" \
+            -p 127.0.0.1:5671:5671 \
+            -v "$PWD/.tmp/release-lavinmq-tls/certs:/certs:ro" \
+            cloudamqp/lavinmq:2.4.0 \
+            --amqps-port=5671 \
+            --cert=/certs/server_certificate.pem \
+            --key=/certs/server_key.pem
+
+      - name: Wait for TLS broker
+        run: |
+          for _ in $(seq 1 90); do
+            if openssl s_client \
+              -connect 127.0.0.1:5671 \
+              -servername localhost \
+              -CAfile "$AMQP_TLS_CA_CERT" \
+              </dev/null >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "LavinMQ TLS AMQP broker did not become reachable" >&2
+          docker logs "$AMQP_TLS_DOCKER_CONTAINER" || true
+          exit 1
+
+      - name: Run TLS gate
+        run: crystal spec spec/tls_spec.cr --error-trace
+
+      - name: Stop TLS broker container
+        if: always()
+        run: docker rm -f "$AMQP_TLS_DOCKER_CONTAINER" || true
+
   backpressure:
     name: ${{ matrix.broker }} backpressure gate
     runs-on: ubuntu-latest

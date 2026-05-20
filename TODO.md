@@ -21,6 +21,7 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: current no-broker default `crystal spec --error-trace` exits 0: 228 examples, 0 failures, 0 errors, 92 pending.
   - Evidence: RabbitMQ opt-in TLS/backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: LavinMQ 2.4.0 opt-in backpressure/chaos suite exits 0: 150 examples, 0 failures, 0 errors, 1 pending (TLS only).
+  - Evidence: later LavinMQ 2.4.0 opt-in TLS gate exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
 
 - [x] Add AMQP 1.0 SDD planning specs without weakening the v0 cutline.
   - Risk tier: SAFE docs-only change.
@@ -515,7 +516,7 @@ Status: active working ledger for `amqp-ng`.
   - Progress: added a local TLS fixture in `spec/tls_spec.cr` that generates a self-signed certificate for `wrong-host.test`, trusts that certificate, connects to `amqps://127.0.0.1:<port>/`, and requires `Amqp::TlsHandshakeError`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/tls_spec.cr --error-trace` exits 0: 5 examples, 0 failures, 0 errors, 1 pending.
   - Evidence: full no-broker `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 229 examples, 0 failures, 0 errors, 92 pending.
-  - Cutline: live TLS success still requires `AMQP_TLS_URL`; LavinMQ TLS remains deferred.
+  - Cutline: live TLS success still requires `AMQP_TLS_URL`; RabbitMQ and LavinMQ release-gate jobs now provide that broker fixture.
 - [x] Add checked-in plain-AMQP broker CI for RabbitMQ and LavinMQ.
   - Problem: RISK-14/RISK-15 and the broker compatibility matrix still relied on local-only evidence for the main live broker spec surface.
   - Progress: extended `.github/workflows/ci.yml` with a `broker-smoke` matrix for `rabbitmq:3.13.7` and `cloudamqp/lavinmq:2.4.0` on Crystal 1.20.2. The job waits for `AMQP_URL` reachability and runs the full spec suite against each broker.
@@ -541,7 +542,13 @@ Status: active working ledger for `amqp-ng`.
   - Progress: extended `.github/workflows/release-gates.yml` with a RabbitMQ TLS job. The job generates a one-day CA and localhost/127.0.0.1 server certificate, writes a test-only RabbitMQ TLS config, waits for `openssl s_client` verification, then runs `spec/tls_spec.cr` with `AMQP_TLS_URL` and `AMQP_TLS_CA_CERT`.
   - Evidence: local workflow syntax parses as YAML.
   - Evidence: local generated-cert RabbitMQ TLS gate verifies with `openssl s_client` and exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
-  - Cutline: LavinMQ TLS and thresholded performance gates remain future work.
+  - Cutline: LavinMQ TLS is tracked below; thresholded performance gates remain future work.
+- [x] Add manual CI release gate for LavinMQ TLS.
+  - Problem: LavinMQ TLS had local-only evidence and remained called out as deferred in release docs.
+  - Progress: extended `.github/workflows/release-gates.yml` with a LavinMQ TLS job. The job generates a one-day CA and localhost/127.0.0.1 server certificate, starts `cloudamqp/lavinmq:2.4.0` with `--amqps-port`, `--cert`, and `--key`, waits for `openssl s_client` verification, then runs `spec/tls_spec.cr` with `AMQP_TLS_URL` and `AMQP_TLS_CA_CERT`.
+  - Evidence: local workflow syntax parses as YAML.
+  - Evidence: local generated-cert LavinMQ TLS gate verifies with `openssl s_client` and exits 0: 5 examples, 0 failures, 0 errors, 0 pending.
+  - Cutline: thresholded performance gates remain future work.
 - [x] Add positive-lane validation to the manual perf-smoke workflow.
   - Problem: the manual perf-smoke workflow executed `tools/perf_publish.cr`, but it would still upload malformed or partially missing benchmark output if the process emitted structurally valid but incomplete JSON.
   - Progress: added `tools/perf_smoke_assert.cr`. It parses the JSON artifact, requires the `amqp-ng publish microbench` tool marker, non-empty `metrics` and `stages`, required lanes such as `publish_single`, `confirm_sync`, and `encode_empty_publish_frames`, and positive sample/median floors.

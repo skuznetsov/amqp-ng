@@ -335,18 +335,18 @@ rejects private stdlib ivar reach-in and wire-codec side effects.
 **Severity.** Medium (would block the author's own use of the
 shard).
 
-**Likelihood.** Low for checked no-broker, plain-AMQP broker, RabbitMQ
-TLS, backpressure, and Docker chaos surfaces. The benchmark harness has
-a manual CI smoke, but thresholded performance and LavinMQ TLS paths
-still require separate gates.
+**Likelihood.** Low for checked no-broker, plain-AMQP broker, TLS,
+backpressure, and Docker chaos surfaces. The benchmark harness has a
+manual CI smoke, but thresholded performance paths still require
+separate gates.
 
 **Status.** Mitigated for no-broker default specs and local tool
 type-checks on pinned Crystal 1.19.2/1.20.2, plus plain-AMQP
 RabbitMQ 3.13.7 and LavinMQ 2.4.0 live specs on Crystal 1.20.2.
-Manual release-gate CI covers RabbitMQ TLS plus backpressure and Docker
-chaos against both brokers. Manual perf-smoke CI covers benchmark
-harness execution and positive JSON lane validation. LavinMQ TLS and
-normative thresholded performance gates remain future work.
+Manual release-gate CI covers TLS plus backpressure and Docker chaos
+against both brokers. Manual perf-smoke CI covers benchmark harness
+execution and positive JSON lane validation. Normative thresholded
+performance gates remain future work.
 
 ---
 
@@ -370,12 +370,11 @@ and the README stay aligned with `Config::RECOGNIZED_QUERY_KEYS`.
 
 **Likelihood.** Medium across the lifetime of the project.
 
-**Status.** Mitigated for checked no-broker, plain-AMQP broker,
-RabbitMQ TLS, backpressure, and Docker chaos surfaces by local
-doc-link/config-surface lint plus checked-in CI. Manual perf-smoke CI
-covers benchmark harness execution and positive JSON lane validation.
-LavinMQ TLS and normative thresholded performance claims remain future
-work.
+**Status.** Mitigated for checked no-broker, plain-AMQP broker, TLS,
+backpressure, and Docker chaos surfaces by local doc-link/config-surface
+lint plus checked-in CI. Manual perf-smoke CI covers benchmark harness
+execution and positive JSON lane validation. Normative thresholded
+performance claims remain future work.
 
 ---
 

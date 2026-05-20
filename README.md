@@ -165,7 +165,7 @@ end
 | Broker | Current evidence |
 | --- | --- |
 | RabbitMQ 3.13.x | Default suite green locally; manual CI covers plain-AMQP, TLS, backpressure, and Docker chaos gates |
-| LavinMQ 2.4.0 | Default suite green locally; manual CI covers plain-AMQP, backpressure, and Docker chaos gates; TLS remains deferred |
+| LavinMQ 2.4.0 | Default suite green locally; manual CI covers plain-AMQP, TLS, backpressure, and Docker chaos gates |
 
 The default suite leaves broker-destructive or environment-specific specs
 pending unless you set the corresponding env vars:
@@ -325,11 +325,11 @@ are environment gated:
 - Broker pause/restart chaos via `AMQP_CHAOS_DOCKER_CONTAINER`.
 
 The checked-in broker CI covers the plain-AMQP live surface. Manual
-`Release Gates` workflow jobs cover the RabbitMQ TLS gate plus the
-backpressure and Docker chaos gates for RabbitMQ/LavinMQ. The manual
-`Perf Smoke` workflow covers benchmark harness execution plus positive
-JSON lane validation. LavinMQ TLS and normative thresholded performance
-gates remain opt-in/local release checks.
+`Release Gates` workflow jobs cover TLS, backpressure, and Docker chaos
+gates for RabbitMQ/LavinMQ. The manual `Perf Smoke` workflow covers
+benchmark harness execution plus positive JSON lane validation.
+Normative thresholded performance gates remain opt-in/local release
+checks.
 
 ## URI And Config
 
@@ -392,9 +392,7 @@ Compatibility notes:
 
 - AMQP 1.0 runtime. See `docs/22-amqp-1-0-sdd.md`.
 - SASL EXTERNAL and other non-PLAIN auth mechanisms.
-- LavinMQ TLS gate.
-- Checked-in CI for LavinMQ TLS and normative thresholded performance
-  gates.
+- Checked-in CI for normative thresholded performance gates.
 - `spec/perf/` reproducible benchmark suite.
 - Broader reliability transcript corpus.
 - WebSocket transport.

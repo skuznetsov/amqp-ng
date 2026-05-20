@@ -201,13 +201,13 @@ Current local evidence in this checkout:
   suites pass.
 - LavinMQ 2.4.0: default suite passes with the same live-gated
   pending examples as RabbitMQ; opt-in backpressure and Docker
-  pause/restart chaos pass. LavinMQ TLS is not configured locally.
+  pause/restart chaos and TLS pass.
 
 A checked-in plain-AMQP broker CI matrix covers RabbitMQ 3.13.7 and
 LavinMQ 2.4.0 on Crystal 1.20.2. A manual `Release Gates` workflow
-covers RabbitMQ TLS plus the backpressure timing and Docker chaos gates
-against both brokers. LavinMQ TLS and thresholded performance gates
-remain opt-in/local release checks.
+covers TLS plus the backpressure timing and Docker chaos gates against
+both brokers. Thresholded performance gates remain opt-in/local release
+checks.
 
 ---
 

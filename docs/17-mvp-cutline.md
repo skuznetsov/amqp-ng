@@ -139,9 +139,8 @@ deferred to also be removed.
   RabbitMQ frames; round-trip decode/encode against this corpus is a
   v0.1.0 acceptance gate. LavinMQ corpus capture is deferred to v0.2.
 - **Two-broker smoke matrix.** The default suite runs against RabbitMQ
-  and LavinMQ. Manual release-gate CI carries RabbitMQ TLS coverage and
-  backpressure/chaos coverage for both brokers. LavinMQ TLS is deferred
-  from v0.1.0.
+  and LavinMQ. Manual release-gate CI carries TLS, backpressure, and
+  chaos coverage for both brokers.
 
 ### 1.11 Documentation
 
@@ -252,9 +251,9 @@ The shard ships v0.1.0 when these pragmatic release checks pass:
 1. `shard.yml` and `Amqp::VERSION` both report `0.1.0`.
 2. Runtime dependencies remain empty.
 3. `crystal spec` passes on the default RabbitMQ URL.
-4. RabbitMQ TLS release gate passes.
+4. RabbitMQ and LavinMQ TLS release gates pass.
 5. RabbitMQ and LavinMQ 2.4.0 pass the default suite and manual
-   backpressure/chaos release gates; LavinMQ TLS is explicitly deferred.
+   backpressure/chaos release gates.
 6. `crystal tool format --check src spec` passes.
 7. `spec/docs_falsifier_link_spec.cr` passes, so new normative prose
    cannot increase the old documentation debt.
