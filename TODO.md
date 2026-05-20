@@ -624,3 +624,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 7 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `AMQP_BENCH_COMPARE_FAIL_METADATA=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic `body_bytes` mismatch and prints the expected metadata failure.
   - Cutline: this gates metadata mismatch only; throughput regression gating still uses `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT`.
+- [x] Add strict missing-lane failure mode for benchmark comparison.
+  - Frame: `Window` = baseline lanes missing from the current benchmark artifact; `Transport` = compare delta list -> optional release-gate failure; `Potential` = `(silently_lost_lane_count, incomplete_current_artifacts, baseline_drift_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now accepts `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` and exits nonzero if any baseline `metrics` or `stages` lane is absent from the current artifact. New lanes remain informational.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 8 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic missing lane and prints the expected missing-lane failure.
+  - Cutline: this only fails disappeared baseline lanes; threshold regression and metadata mismatch still use their separate env gates.

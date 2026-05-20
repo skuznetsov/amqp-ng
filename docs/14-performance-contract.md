@@ -224,7 +224,9 @@ those fields differ between baseline and current artifacts. Those warnings
 do not fail the command by default, but they should block strong throughput
 claims until the context difference is explained. For strict local gates,
 set `AMQP_BENCH_COMPARE_FAIL_METADATA=1` so metadata warnings become a
-nonzero comparison result.
+nonzero comparison result. Set `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1`
+when the gate should also reject current artifacts that no longer emit
+lanes present in the baseline.
 
 Before any `PERF-N` entry above becomes a release-blocking contract,
 the repository needs executable benchmarks under `spec/perf/`. Each

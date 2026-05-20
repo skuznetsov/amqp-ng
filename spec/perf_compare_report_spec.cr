@@ -59,6 +59,24 @@ describe AmqpPerfCompareReport do
     failures.map(&.name).should eq(["large"])
   end
 
+  it "returns missing-current failures only when requested" do
+    baseline = JSON.parse(%({
+      "metrics": {
+        "kept": {"median": 100.0},
+        "removed": {"median": 100.0}
+      }
+    }))
+    current = JSON.parse(%({
+      "metrics": {
+        "kept": {"median": 100.0}
+      }
+    }))
+
+    deltas = AmqpPerfCompareReport.compare(baseline, current)
+    AmqpPerfCompareReport.missing_current_failures(deltas, false).should be_empty
+    AmqpPerfCompareReport.missing_current_failures(deltas, true).map(&.name).should eq(["removed"])
+  end
+
   it "renders compact human-readable lines" do
     baseline = JSON.parse(%({"metrics": {"lane": {"median": 100.0}}}))
     current = JSON.parse(%({"metrics": {"lane": {"median": 125.0}}}))
