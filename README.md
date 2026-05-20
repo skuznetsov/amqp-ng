@@ -203,10 +203,12 @@ lanes, and new current-only lanes in one switch; or set
 is absent from the current artifact; set
 `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` to require explicit review for
 current-only lanes. New benchmark
-artifacts include the benchmark schema version, Crystal description,
+artifacts include the benchmark schema version, per-lane units,
+Crystal description,
 release/threading compile flags, and workload-shape fields such as
 message counts, body size, stage iterations, route fanout, and confirm
-windows; compare prints warnings when those stable context fields differ.
+windows; compare prints warnings when those stable context fields differ
+or when matching lanes use incompatible units.
 Set `AMQP_BENCH_COMPARE_FAIL_METADATA=1` to turn those warnings into a
 nonzero exit for strict local gates.
 
@@ -292,8 +294,8 @@ When comparing a branch against a saved baseline, run
 `tools/perf_compare.cr <baseline.json> <current.json>` first; it is a
 longitudinal drift detector, not a substitute for paired broker runs.
 Metadata warnings from that command mean the run is not an apples-to-apples
-throughput comparison until the compiler/build-mode/workload difference
-is explained. Use `AMQP_BENCH_COMPARE_STRICT=1` for strict local release
+throughput comparison until the compiler/build-mode/workload/lane-unit
+difference is explained. Use `AMQP_BENCH_COMPARE_STRICT=1` for strict local release
 gates that must reject mixed contexts and lane schema drift in one switch.
 Use `AMQP_BENCH_COMPARE_FAIL_METADATA=1` when a release gate only needs
 to reject mixed contexts instead of warning.

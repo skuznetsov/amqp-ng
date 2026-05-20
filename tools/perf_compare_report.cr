@@ -69,6 +69,8 @@ module AmqpPerfCompareReport
     compare_metadata_value(warnings, "environment.compile_flags.preview_mt", compile_flag(baseline, "preview_mt"), compile_flag(current, "preview_mt"))
     compare_metadata_value(warnings, "environment.compile_flags.execution_context", compile_flag(baseline, "execution_context"), compile_flag(current, "execution_context"))
     compare_workload_metadata(warnings, baseline, current)
+    compare_lane_units(warnings, "metrics", baseline, current)
+    compare_lane_units(warnings, "stages", baseline, current)
     warnings
   end
 
@@ -168,6 +170,26 @@ module AmqpPerfCompareReport
       "consume_buffer",
     ].each do |key|
       compare_metadata_value(warnings, key, baseline[key]?, current[key]?)
+    end
+  end
+
+  private def compare_lane_units(warnings : Array(String),
+                                 section : String,
+                                 baseline : JSON::Any,
+                                 current : JSON::Any) : Nil
+    baseline_entries = section_entries(baseline, section)
+    current_entries = section_entries(current, section)
+    common_names = (baseline_entries.keys & current_entries.keys).sort!
+
+    common_names.each do |name|
+      compare_metadata_value(
+        warnings,
+        "#{section}.#{name}.unit",
+        baseline_entries[name]["unit"]?,
+        current_entries[name]["unit"]?,
+      )
+    rescue
+      next
     end
   end
 

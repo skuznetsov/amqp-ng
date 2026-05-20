@@ -157,6 +157,29 @@ describe AmqpPerfCompareReport do
     warnings.should contain("metadata confirm_windows differs: baseline [1,10,100], current [1,50,500]")
   end
 
+  it "warns when matching lane units differ" do
+    baseline = JSON.parse(%({
+      "metrics": {
+        "publish_single": {"unit": "msg/s", "median": 100.0}
+      },
+      "stages": {
+        "encode": {"unit": "ops/s", "median": 100.0}
+      }
+    }))
+    current = JSON.parse(%({
+      "metrics": {
+        "publish_single": {"unit": "ops/s", "median": 100.0}
+      },
+      "stages": {
+        "encode": {"median": 100.0}
+      }
+    }))
+
+    warnings = AmqpPerfCompareReport.metadata_warnings(baseline, current)
+    warnings.should contain(%(metadata metrics.publish_single.unit differs: baseline "msg/s", current "ops/s"))
+    warnings.should contain(%(metadata stages.encode.unit exists only in baseline))
+  end
+
   it "promotes metadata warnings to failures only when requested" do
     warnings = ["metadata body_bytes differs: baseline 256, current 1024"]
 

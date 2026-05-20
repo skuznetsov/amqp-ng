@@ -642,3 +642,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `AMQP_BENCH_COMPARE_STRICT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic artifact pair with metadata drift, one missing baseline lane, and one new current-only lane.
   - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
   - Cutline: strict mode does not imply a throughput regression threshold; set `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` explicitly for that.
+- [x] Add lane-unit drift warnings for benchmark comparison.
+  - Frame: `Window` = matching benchmark lanes with comparable medians; `Transport` = lane unit metadata -> metadata warning/failure path; `Potential` = `(unit_mismatch_count, false_ratio_claims, baseline_drift_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now warns when matching `metrics` or `stages` lanes have different `unit` values or the unit exists only on one side. Under `AMQP_BENCH_COMPARE_STRICT=1` this becomes a metadata failure.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 10 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `AMQP_BENCH_COMPARE_STRICT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic `msg/s` vs `ops/s` unit mismatch.
+  - Cutline: this validates lane-unit comparability only; it does not validate broker/compiler parity by itself.
