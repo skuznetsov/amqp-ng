@@ -636,3 +636,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_compare_report_spec.cr --error-trace` exits 0: 9 examples, 0 failures, 0 errors, 0 pending.
   - Evidence: `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic new lane and prints the expected new-lane failure.
   - Cutline: this is for strict profile/schema gates; normal exploratory comparisons can keep new lanes informational.
+- [x] Add aggregate strict mode for benchmark comparison.
+  - Frame: `Window` = a release-gate comparison that needs all context/schema drift guards; `Transport` = one env switch -> metadata/missing/new lane failure modes; `Potential` = `(gate_configuration_steps, missed_strict_flag_count, baseline_policy_uncertainty)`.
+  - Progress: `tools/perf_compare.cr` now accepts `AMQP_BENCH_COMPARE_STRICT=1`, enabling metadata, missing-current, and new-lane failure modes together while leaving regression percentage gating controlled by `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT`.
+  - Evidence: `AMQP_BENCH_COMPARE_STRICT=1 /opt/homebrew/bin/crystal run tools/perf_compare.cr --error-trace -- <baseline> <current>` exits 1 for a synthetic artifact pair with metadata drift, one missing baseline lane, and one new current-only lane.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_compare.cr --no-codegen --error-trace` exits 0.
+  - Cutline: strict mode does not imply a throughput regression threshold; set `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` explicitly for that.

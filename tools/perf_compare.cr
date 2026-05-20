@@ -20,6 +20,7 @@ if ARGV.size != 2
   STDERR.puts "optional env:"
   STDERR.puts "  AMQP_BENCH_COMPARE_THRESHOLD_PCT=10"
   STDERR.puts "  AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT=15"
+  STDERR.puts "  AMQP_BENCH_COMPARE_STRICT=1"
   STDERR.puts "  AMQP_BENCH_COMPARE_FAIL_METADATA=1"
   STDERR.puts "  AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1"
   STDERR.puts "  AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1"
@@ -28,9 +29,10 @@ end
 
 threshold_pct = (ENV["AMQP_BENCH_COMPARE_THRESHOLD_PCT"]? || "10").to_f64
 fail_regression_pct = ENV["AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT"]?.try(&.to_f64)
-fail_metadata = env_bool("AMQP_BENCH_COMPARE_FAIL_METADATA")
-fail_missing_current = env_bool("AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT")
-fail_new_lane = env_bool("AMQP_BENCH_COMPARE_FAIL_NEW_LANE")
+strict = env_bool("AMQP_BENCH_COMPARE_STRICT")
+fail_metadata = strict || env_bool("AMQP_BENCH_COMPARE_FAIL_METADATA")
+fail_missing_current = strict || env_bool("AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT")
+fail_new_lane = strict || env_bool("AMQP_BENCH_COMPARE_FAIL_NEW_LANE")
 
 baseline = JSON.parse(File.read(ARGV[0]))
 current = JSON.parse(File.read(ARGV[1]))
@@ -52,19 +54,19 @@ end
 
 metadata_failures = AmqpPerfCompareReport.metadata_failures(metadata_warnings, fail_metadata)
 unless metadata_failures.empty?
-  STDERR.puts "perf comparison failed: #{metadata_failures.size} metadata warning(s) and AMQP_BENCH_COMPARE_FAIL_METADATA=1"
+  STDERR.puts "perf comparison failed: #{metadata_failures.size} metadata warning(s) with metadata strict gate enabled"
   failed = true
 end
 
 missing_failures = AmqpPerfCompareReport.missing_current_failures(deltas, fail_missing_current)
 unless missing_failures.empty?
-  STDERR.puts "perf comparison failed: #{missing_failures.size} baseline lane(s) missing from current and AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1"
+  STDERR.puts "perf comparison failed: #{missing_failures.size} baseline lane(s) missing from current with missing-lane strict gate enabled"
   failed = true
 end
 
 new_lane_failures = AmqpPerfCompareReport.new_lane_failures(deltas, fail_new_lane)
 unless new_lane_failures.empty?
-  STDERR.puts "perf comparison failed: #{new_lane_failures.size} new current lane(s) and AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1"
+  STDERR.puts "perf comparison failed: #{new_lane_failures.size} new current lane(s) with new-lane strict gate enabled"
   failed = true
 end
 

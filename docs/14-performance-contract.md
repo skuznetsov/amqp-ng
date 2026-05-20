@@ -223,7 +223,9 @@ body sweep sizes, and consume buffer. `tools/perf_compare.cr` warns when
 those fields differ between baseline and current artifacts. Those warnings
 do not fail the command by default, but they should block strong throughput
 claims until the context difference is explained. For strict local gates,
-set `AMQP_BENCH_COMPARE_FAIL_METADATA=1` so metadata warnings become a
+set `AMQP_BENCH_COMPARE_STRICT=1` to reject metadata drift, missing
+baseline lanes, and new current-only lanes in one switch. Set
+`AMQP_BENCH_COMPARE_FAIL_METADATA=1` so metadata warnings become a
 nonzero comparison result. Set `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1`
 when the gate should also reject current artifacts that no longer emit
 lanes present in the baseline. Set `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1`

@@ -197,6 +197,8 @@ saved benchmark artifacts lane-by-lane across `metrics` and `stages`.
 It prints regressions, improvements, missing lanes, and new lanes. Set
 `AMQP_BENCH_COMPARE_FAIL_REGRESSION_PCT` to make the command exit nonzero
 when a matching lane regresses past a local threshold; set
+`AMQP_BENCH_COMPARE_STRICT=1` to fail on metadata drift, missing baseline
+lanes, and new current-only lanes in one switch; or set
 `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` to fail when a baseline lane
 is absent from the current artifact; set
 `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` to require explicit review for
@@ -291,8 +293,10 @@ When comparing a branch against a saved baseline, run
 longitudinal drift detector, not a substitute for paired broker runs.
 Metadata warnings from that command mean the run is not an apples-to-apples
 throughput comparison until the compiler/build-mode/workload difference
-is explained. Use `AMQP_BENCH_COMPARE_FAIL_METADATA=1` when a release
-gate must reject mixed contexts instead of only warning.
+is explained. Use `AMQP_BENCH_COMPARE_STRICT=1` for strict local release
+gates that must reject mixed contexts and lane schema drift in one switch.
+Use `AMQP_BENCH_COMPARE_FAIL_METADATA=1` when a release gate only needs
+to reject mixed contexts instead of warning.
 Use `AMQP_BENCH_COMPARE_FAIL_MISSING_CURRENT=1` when a release gate must
 reject disappeared baseline lanes.
 Use `AMQP_BENCH_COMPARE_FAIL_NEW_LANE=1` when a release gate must reject
