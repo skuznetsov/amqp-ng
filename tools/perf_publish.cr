@@ -33,6 +33,20 @@ confirm_windows = (ENV["AMQP_BENCH_CONFIRM_WINDOWS"]? || "1,10,50,100,500")
   .map(&.to_i)
   .uniq
   .sort
+route_counts = (ENV["AMQP_BENCH_ROUTE_COUNTS"]? || "2,4,8")
+  .split(',')
+  .map(&.strip)
+  .reject(&.empty?)
+  .map(&.to_i)
+  .uniq
+  .sort
+body_sweep_sizes = (ENV["AMQP_BENCH_BODY_SIZES"]? || "0,64,256,1024")
+  .split(',')
+  .map(&.strip)
+  .reject(&.empty?)
+  .map(&.to_i)
+  .uniq
+  .sort
 
 raise "AMQP_BENCH_PUBLISH_N must be positive" unless publish_n > 0
 raise "AMQP_BENCH_CONFIRM_N must be positive" unless confirm_n > 0
@@ -46,6 +60,8 @@ raise "AMQP_BENCH_CONNECTIONS must contain at least one positive integer" unless
 raise "AMQP_BENCH_CONNECTIONS must contain only positive integers" unless connection_counts.all? { |n| n > 0 }
 raise "AMQP_BENCH_CONFIRM_WINDOWS must contain at least one positive integer" unless confirm_windows.any? { |n| n > 0 }
 raise "AMQP_BENCH_CONFIRM_WINDOWS must contain only positive integers" unless confirm_windows.all? { |n| n > 0 }
+raise "AMQP_BENCH_ROUTE_COUNTS must contain only positive integers" unless route_counts.all? { |n| n > 0 }
+raise "AMQP_BENCH_BODY_SIZES must contain only non-negative integers" unless body_sweep_sizes.all? { |n| n >= 0 }
 
 def median(values : Array(Float64)) : Float64
   sorted = values.sort
@@ -239,6 +255,17 @@ stages["encode_empty_publish_frames"] = sample_rates("encode_empty_publish_frame
   end
 end
 
+body_sweep_sizes.each do |size|
+  sweep_body = Bytes.new(size, 120_u8)
+  label = "encode_empty_publish_frames_body_#{size}"
+  stages[label] = sample_rates(label, samples, stage_n) do
+    stage_n.times do
+      io = IO::Memory.new
+      write_empty_property_publish(io, 1_u16, "", "bench", sweep_body)
+    end
+  end
+end
+
 ack_payload = Amqp::Wire::AmqpZeroNineOne::BasicMethods::Ack.new(42_u64, false).to_payload
 ack_frame_io = IO::Memory.new
 Amqp::Wire::Frame.new(Amqp::Wire::FrameType::Method, 1_u16, ack_payload).write(ack_frame_io)
@@ -428,6 +455,39 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
       ch.publish(single_message, "", queue)
     end
     ch.queue_purge(queue)
+  end
+
+  route_counts.each do |route_count|
+    routes = Array.new(route_count) do
+      ch.queue_declare("", exclusive: true, auto_delete: true).name
+    end
+    routes.each do |name|
+      ch.publish(single_message, "", name)
+      ch.queue_purge(name)
+    end
+
+    results["publish_single_round_robin_routes_#{route_count}"] = sample_rates("publish_single_round_robin_routes_#{route_count}", samples, publish_n) do
+      publish_n.times do |index|
+        ch.publish(single_message, "", routes[index % route_count])
+      end
+      routes.each { |name| ch.queue_purge(name) }
+    end
+  ensure
+    routes.try &.each { |name| ch.queue_delete(name) rescue nil }
+  end
+
+  body_sweep_sizes.each do |size|
+    next if size == body_bytes
+
+    sweep_body = Bytes.new(size, 120_u8)
+    sweep_message = Amqp::Message.new(sweep_body)
+    label = "publish_single_body_#{size}"
+    results[label] = sample_rates(label, samples, publish_n) do
+      publish_n.times do
+        ch.publish(sweep_message, "", queue)
+      end
+      ch.queue_purge(queue)
+    end
   end
 
   results["publish_batch"] = sample_rates("publish_batch", samples, publish_n) do
@@ -685,6 +745,8 @@ JSON.build(STDOUT) do |json|
     json.field "channel_counts", channel_counts
     json.field "connection_counts", connection_counts
     json.field "confirm_windows", confirm_windows
+    json.field "route_counts", route_counts
+    json.field "body_sweep_sizes", body_sweep_sizes
     json.field "consume_buffer", consume_buffer
     json.field "stages" do
       json.object do

@@ -259,6 +259,9 @@ For live single-publish attribution, the harness also emits
 `publish_single_repeat`. These lanes help separate body-size cost,
 public API wrapper cost, prepared-route reuse, route-cache stability,
 and lane-order noise.
+Set `AMQP_BENCH_ROUTE_COUNTS` to add round-robin route-fanout lanes and
+`AMQP_BENCH_BODY_SIZES` to sweep live single-publish body sizes plus
+matching synthetic `encode_empty_publish_frames_body_<n>` stages.
 Set `AMQP_BENCH_CONFIRM_WINDOWS` to sweep confirm-window sizes; the
 tool emits `confirm_window_<n>` lanes that publish `n` messages, wait
 for confirms, and repeat. These lanes show the transport benefit of a
