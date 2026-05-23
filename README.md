@@ -381,6 +381,15 @@ AMQP_PERF_MEM_002_MAX_BYTES=640 \
 crystal spec spec/perf/t_perf_mem_001_002_spec.cr --release --error-trace
 ```
 
+Fire-and-forget publish allocation pressure:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_GC_MESSAGES=1000000 \
+AMQP_PERF_GC_001_MAX_BYTES_PER_MESSAGE=512 \
+crystal spec spec/perf/t_perf_gc_001_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
 ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
 CI owns a normalized baseline.

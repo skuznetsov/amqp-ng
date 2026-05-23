@@ -186,14 +186,19 @@ JSON/TXT artifacts under `spec/perf/results/`.
 ## 9. PERF-8: GC pressure
 
 **Roadmap target.** Publishing 1M messages of 256 bytes fire-and-forget
-results in `< 200` GC cycles (full collections), as reported by
-`GC.stats.collections` delta.
+allocates `< 512 bytes/message`, as reported by the
+`GC.stats.total_bytes` delta.
 
 **Why this matters.** A shard that allocates heavily per message in
 the hot path will be hard to use under sustained load. Buffer reuse
 should be measured before becoming a normative codec requirement.
 
-**Future harness:** `T-PERF-GC-001`.
+**Executable harness:** `spec/perf/t_perf_gc_001_spec.cr` is default-off
+behind `AMQP_PERF_LIVE=1`. It publishes `AMQP_PERF_GC_MESSAGES`
+fire-and-forget messages, records the `GC.stats.total_bytes` delta,
+divides by message count, asserts
+`AMQP_PERF_GC_001_MAX_BYTES_PER_MESSAGE`, and writes local JSON/TXT
+artifacts under `spec/perf/results/`.
 
 ---
 
