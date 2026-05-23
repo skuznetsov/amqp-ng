@@ -361,6 +361,15 @@ AMQP_PERF_CONS_001_MIN=100000 \
 crystal spec spec/perf/t_perf_cons_001_spec.cr --release --error-trace
 ```
 
+Stats snapshot overhead:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_STATS_READS=1000000 \
+AMQP_PERF_STATS_001_MAX_US=1 \
+crystal spec spec/perf/t_perf_stats_001_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
 ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
 CI owns a normalized baseline.

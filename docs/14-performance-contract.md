@@ -197,7 +197,11 @@ the reference rig takes `< 1 second` wall time (i.e., per-call cost
 **Why this matters.** Stats are observed at scrape frequency; if
 each read is expensive, observability is too costly to deploy.
 
-**Future harness:** `T-PERF-STATS-001`.
+**Executable harness:** `spec/perf/t_perf_stats_001_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1`. It calls `Amqp::Stats#snapshot`
+`AMQP_PERF_STATS_READS` times, records the average microseconds per
+call, asserts the caller-provided `AMQP_PERF_STATS_001_MAX_US` bound,
+and writes local JSON/TXT artifacts under `spec/perf/results/`.
 
 ---
 
