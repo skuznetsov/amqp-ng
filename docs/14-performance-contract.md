@@ -230,7 +230,14 @@ recovered channel) is `< 2 seconds`.
 takes ~1 s on the reference rig; one or two retries fit in the
 budget.
 
-**Future harness:** `T-PERF-RECOV-001` automates the broker restart.
+**Executable harness:** `spec/perf/t_perf_recov_001_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1` and additionally requires
+`AMQP_CHAOS_DOCKER_CONTAINER` plus a reachable Docker CLI. It restarts
+the named broker container `AMQP_PERF_RECOV_SAMPLES` times, records the
+elapsed time from restart command start to the first successful
+`publish_confirm` on the recovered channel, asserts
+`AMQP_PERF_RECOV_001_MAX_MS`, and writes local JSON/TXT artifacts under
+`spec/perf/results/`.
 
 ---
 

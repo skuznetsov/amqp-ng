@@ -253,13 +253,12 @@ deferred rich stats model.
 | T-PERF-MEM-001..002      | PERF-6/7 memory bounds.                                                 | 14 §7, §8; `spec/perf/t_perf_mem_001_002_spec.cr` |
 | T-PERF-GC-001            | PERF-8 GC pressure bound.                                               | 14 §9; `spec/perf/t_perf_gc_001_spec.cr` |
 | T-PERF-STATS-001         | PERF-9 stats read < 1 µs/call.                                          | 14 §10; `spec/perf/t_perf_stats_001_spec.cr` |
-| T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11                                 |
+| T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11; `spec/perf/t_perf_recov_001_spec.cr` |
 
 `T-PERF-HANDSHAKE-001`, `T-PERF-PUB-001`, `T-PERF-PUB-002`,
 `T-PERF-MULTICHAN-001`, `T-PERF-CONS-001`, `T-PERF-MEM-001..002`, and
-`T-PERF-GC-001`, and `T-PERF-STATS-001` have default-off carriers under
-`spec/perf/`. The remaining `T-PERF-*` rows are reserved roadmap
-falsifiers until their carriers exist. None of these rows are current
+`T-PERF-GC-001`, `T-PERF-STATS-001`, and `T-PERF-RECOV-001` have
+default-off carriers under `spec/perf/`. None of these rows are current
 release-blocking checks.
 
 ---

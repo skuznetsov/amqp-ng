@@ -390,6 +390,16 @@ AMQP_PERF_GC_001_MAX_BYTES_PER_MESSAGE=512 \
 crystal spec spec/perf/t_perf_gc_001_spec.cr --release --error-trace
 ```
 
+Broker-restart recovery dead-window median:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_CHAOS_DOCKER_CONTAINER=rabbitmq \
+AMQP_PERF_RECOV_SAMPLES=5 \
+AMQP_PERF_RECOV_001_MAX_MS=2000 \
+crystal spec spec/perf/t_perf_recov_001_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
 ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
 CI owns a normalized baseline.
