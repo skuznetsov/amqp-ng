@@ -101,6 +101,7 @@ describe "documented public API surface" do
     typeof(ch.prepared_publisher("", "rk")).should eq(Amqp::PreparedPublisher)
     typeof(ch.publish_confirm(Amqp::Message.new("x"), "", "rk")).should eq(Bool)
     typeof(ch.publish_async(Amqp::Message.new("x"), "", "rk")).should eq(Tuple(UInt64, ::Channel(Amqp::ConfirmOutcome)))
+    typeof(ch.publish_async("x".to_slice, "", "rk")).should eq(Tuple(UInt64, ::Channel(Amqp::ConfirmOutcome)))
     typeof(ch.subscribe("q")).should eq(Amqp::Subscription)
     typeof(ch.get("q")).should eq(Amqp::GetMessage?)
     typeof(ch.queue_purge("q")).should eq(UInt32)

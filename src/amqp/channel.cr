@@ -754,7 +754,16 @@ module Amqp
                       *,
                       properties : Properties = Properties.new,
                       mandatory : Bool = false) : {UInt64, ::Channel(ConfirmOutcome)}
-      publish_async(Message.new(body, properties), exchange, routing_key, mandatory: mandatory)
+      raise ConfigurationError.new("publish_async requires confirm mode") unless @confirms_enabled
+      wait_for_flow_active
+      outcome = ::Channel(ConfirmOutcome).new(1)
+      enter_operation
+      tag = begin
+        publish_registered(body, properties, exchange, routing_key, mandatory, false, outcome)
+      ensure
+        leave_operation
+      end
+      {tag.not_nil!, outcome}
     end
 
     def confirm_select : Nil
@@ -1618,6 +1627,59 @@ module Amqp
             body, max_body) do
             seq = @confirms_mutex.synchronize do
               register_sync_pending_confirm_replay_locked(nil, exchange, routing_key, mandatory)
+            end
+          end
+          @connection.stats.incr_published
+          return seq
+        end
+        write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+          body, max_body) { }
+      rescue ex
+        if tag = seq
+          if lock_during_write
+            discard_pending_confirm_locked(tag)
+          else
+            @confirms_mutex.synchronize { discard_pending_confirm_locked(tag) }
+          end
+        end
+        raise ex
+      ensure
+        @confirms_mutex.unlock if lock_during_write
+      end
+      @connection.stats.incr_published
+      seq
+    end
+
+    private def publish_registered(body : Bytes,
+                                   properties : Properties,
+                                   exchange : String,
+                                   routing_key : String,
+                                   mandatory : Bool,
+                                   immediate : Bool,
+                                   outcome : ::Channel(ConfirmOutcome)?) : UInt64?
+      header_payload = unless properties.empty?
+        Amqp::Wire::AmqpZeroNineOne::ContentHeader.encode(
+          Amqp::Wire::AmqpZeroNineOne::CLASS_ID_BASIC,
+          body.size.to_u64,
+          properties,
+        )
+      end
+      frame_max = @connection.frame_max
+      max_body = max_body_per_frame(frame_max)
+      seq = nil
+      lock_during_write = @confirms_enabled && @connection.recovery_mode.full?
+      @confirms_mutex.lock if lock_during_write
+      begin
+        if lock_during_write
+          replay_message = Message.new(body, properties)
+          seq = register_pending_confirm_replay_locked(replay_message,
+            exchange, routing_key, mandatory, outcome)
+        else
+          write_publish_frames(exchange, routing_key, mandatory, immediate, header_payload,
+            body, max_body) do
+            seq = @confirms_mutex.synchronize do
+              register_pending_confirm_replay_locked(nil, exchange, routing_key,
+                mandatory, outcome)
             end
           end
           @connection.stats.incr_published

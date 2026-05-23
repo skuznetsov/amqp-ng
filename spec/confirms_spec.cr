@@ -398,6 +398,35 @@ describe "publisher confirms" do
       end
     end
 
+    it "publish_async confirms raw byte bodies and preserves properties" do
+      pending! "broker not reachable" unless SpecHelper.broker_reachable?
+      Amqp.connect(SpecHelper.amqp_url, recovery: false) do |conn|
+        ch = conn.channel
+        info = ch.queue_declare(exclusive: true)
+        ch.confirm_select
+        props = Amqp::Properties.new(content_type: "application/octet-stream")
+
+        tag, outcome_ch = ch.publish_async("async-bytes".to_slice, "", info.name,
+          properties: props, mandatory: true)
+        outcome = nil
+        select
+        when outcome = outcome_ch.receive?
+        when timeout(5.seconds)
+          fail "timed out waiting for async bytes ack outcome"
+        end
+
+        outcome.should_not be_nil
+        outcome.not_nil!.delivery_tag.should eq(tag)
+        outcome.not_nil!.kind.ack?.should be_true
+        outcome_ch.receive?.should be_nil
+        got = ch.get(info.name)
+        got.should_not be_nil
+        String.new(got.not_nil!.body).should eq("async-bytes")
+        got.not_nil!.properties.content_type.should eq("application/octet-stream")
+        ch.close
+      end
+    end
+
     it "keeps mandatory return ordering separate from following acked publishes" do
       pending! "broker not reachable" unless SpecHelper.broker_reachable?
       Amqp.connect(SpecHelper.amqp_url) do |conn|
