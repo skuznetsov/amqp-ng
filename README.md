@@ -370,6 +370,17 @@ AMQP_PERF_STATS_001_MAX_US=1 \
 crystal spec spec/perf/t_perf_stats_001_spec.cr --release --error-trace
 ```
 
+Idle connection and buffered-delivery heap deltas:
+
+```sh
+AMQP_PERF_LIVE=1 \
+AMQP_PERF_MEM_CONNECTIONS=100 \
+AMQP_PERF_MEM_DELIVERIES=100 \
+AMQP_PERF_MEM_001_MAX_BYTES=65536 \
+AMQP_PERF_MEM_002_MAX_BYTES=640 \
+crystal spec spec/perf/t_perf_mem_001_002_spec.cr --release --error-trace
+```
+
 It writes local result artifacts under `spec/perf/results/`, which are
 ignored by git. Keep `AMQP_PERF_*_MIN` values host-specific until perf
 CI owns a normalized baseline.

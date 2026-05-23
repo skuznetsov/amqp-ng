@@ -155,8 +155,12 @@ measured by `GC.stats.heap_size` delta.
 **Why this matters.** Connections are sometimes pooled in hundreds.
 64 KB × 500 = 32 MB; acceptable.
 
-**Future harness:** `T-PERF-MEM-001` opens N connections, measures heap
-delta divided by N.
+**Executable harness:** `spec/perf/t_perf_mem_001_002_spec.cr` is
+default-off behind `AMQP_PERF_LIVE=1`. `T-PERF-MEM-001` opens
+`AMQP_PERF_MEM_CONNECTIONS` live connections with one channel each,
+records the `GC.stats.heap_size` delta after a collection, divides by
+connection count, asserts `AMQP_PERF_MEM_001_MAX_BYTES`, and writes
+local JSON/TXT artifacts under `spec/perf/results/`.
 
 ---
 
@@ -170,7 +174,12 @@ ring buffer slot).
 **Why this matters.** Subscriptions are sometimes high-buffer
 (thousands). Memory per delivery is the multiplier.
 
-**Future harness:** `T-PERF-MEM-002`.
+**Executable harness:** `spec/perf/t_perf_mem_001_002_spec.cr` also
+covers `T-PERF-MEM-002`. It opens a live subscription with
+`AMQP_PERF_MEM_DELIVERIES` unread no-ack deliveries buffered locally,
+records the `GC.stats.heap_size` delta after a collection, divides by
+delivery count, asserts `AMQP_PERF_MEM_002_MAX_BYTES`, and writes local
+JSON/TXT artifacts under `spec/perf/results/`.
 
 ---
 
