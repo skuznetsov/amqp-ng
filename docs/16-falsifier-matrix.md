@@ -255,11 +255,8 @@ deferred rich stats model.
 | T-PERF-STATS-001         | PERF-9 stats read < 1 µs/call.                                          | 14 §10; `spec/perf/t_perf_stats_001_spec.cr` |
 | T-PERF-RECOV-001         | PERF-10 recovery dead window < 2 s median.                              | 14 §11; `spec/perf/t_perf_recov_001_spec.cr` |
 
-`T-PERF-HANDSHAKE-001`, `T-PERF-PUB-001`, `T-PERF-PUB-002`,
-`T-PERF-MULTICHAN-001`, `T-PERF-CONS-001`, `T-PERF-MEM-001..002`, and
-`T-PERF-GC-001`, `T-PERF-STATS-001`, and `T-PERF-RECOV-001` have
-default-off carriers under `spec/perf/`. None of these rows are current
-release-blocking checks.
+All `T-PERF-*` rows have default-off carriers under `spec/perf/`. None of
+these rows are current release-blocking checks.
 
 ---
 
