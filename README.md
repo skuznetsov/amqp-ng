@@ -285,6 +285,9 @@ Set `AMQP_BENCH_CONFIRM_WINDOWS` to sweep confirm-window sizes; the
 tool emits `confirm_window_<n>` lanes that publish `n` messages, wait
 for confirms, and repeat. These lanes show the transport benefit of a
 ladder/windowed confirm style without changing application code.
+The harness also emits `confirm_async` and `confirm_async_bytes` so the
+ordinary `Amqp::Message` async-confirm path and the direct `Bytes`
+async-confirm path remain separately measurable.
 After a run, `tools/perf_recommend.cr <bench.json>` prints conservative
 run-local guidance, such as when batch publishing, prepared fixed-route
 publishers, route sharding, or body-size reduction are the highest

@@ -714,3 +714,9 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal spec spec/confirms_spec.cr spec/api_surface_spec.cr spec/recovery_spec.cr --error-trace` exits 0: 58 examples, 0 failures, 0 errors, 49 pending.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check src/amqp/channel.cr spec/confirms_spec.cr spec/api_surface_spec.cr` exits 0.
   - Cutline: this is verified as an allocation-path and behavior-preservation change; local live broker was not reachable in this slice, so end-to-end async-confirm throughput remains unmeasured here.
+- [x] Add benchmark lanes for the async-bytes confirm corridor.
+  - Frame: `Window` = async-bytes confirm path exists but the saved benchmark artifact cannot separate it from `Amqp::Message` async confirms; `Transport` = `publish_async` outcome drain -> metric lanes; `Potential` = `(blind_perf_corridors, unmeasured_wrapper_delta, artifact_interpretation_work)`.
+  - Progress: `tools/perf_publish.cr` now emits `confirm_async` and `confirm_async_bytes` lanes with a shared outcome-drain helper, and README/performance docs describe the split as measurement-only.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace` exits 0.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check tools/perf_publish.cr` exits 0.
+  - Cutline: no live broker was reachable during this slice, so the new lanes are compile-verified but not live-emitted here.

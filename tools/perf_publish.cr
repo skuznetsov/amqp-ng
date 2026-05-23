@@ -126,6 +126,25 @@ def publish_concurrently(channels : Array(Amqp::Channel), count : Int32, message
   channels.size.times { done.receive }
 end
 
+def drain_async_outcomes(label : String,
+                         & : ::Channel(::Channel(Amqp::ConfirmOutcome)) -> Nil) : Nil
+  outcomes = ::Channel(::Channel(Amqp::ConfirmOutcome)).new(1024)
+  drained = ::Channel(Int32).new(1)
+  spawn(name: "amqp-bench-#{label}-confirm-drain") do
+    failures = 0
+    while outcome_ch = outcomes.receive?
+      outcome = outcome_ch.receive
+      failures += 1 unless outcome.kind.ack?
+    end
+    drained.send(failures)
+  end
+
+  yield outcomes
+  outcomes.close
+  failures = drained.receive
+  raise "#{label}: #{failures} async confirms failed" unless failures == 0
+end
+
 def write_empty_property_publish(io : IO, channel : UInt16, exchange : String, routing_key : String, body : Bytes) : Nil
   Amqp::Wire::AmqpZeroNineOne::BasicMethods.write_publish_frame(
     io, channel, exchange, routing_key, mandatory: false, immediate: false)
@@ -641,6 +660,26 @@ Amqp.connect(url, recovery: Amqp::Recovery::None) do |conn|
   results["confirm_sync_bytes"] = sample_rates("confirm_sync_bytes", samples, confirm_n) do
     confirm_n.times do
       confirm_ch.publish_confirm(body, "", confirm_queue, timeout: 5.seconds)
+    end
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
+  results["confirm_async"] = sample_rates("confirm_async", samples, confirm_n) do
+    drain_async_outcomes("confirm_async") do |outcomes|
+      confirm_n.times do
+        _tag, outcome_ch = confirm_ch.publish_async(single_message, "", confirm_queue)
+        outcomes.send(outcome_ch)
+      end
+    end
+    confirm_ch.queue_purge(confirm_queue)
+  end
+
+  results["confirm_async_bytes"] = sample_rates("confirm_async_bytes", samples, confirm_n) do
+    drain_async_outcomes("confirm_async_bytes") do |outcomes|
+      confirm_n.times do
+        _tag, outcome_ch = confirm_ch.publish_async(body, "", confirm_queue)
+        outcomes.send(outcome_ch)
+      end
     end
     confirm_ch.queue_purge(confirm_queue)
   end

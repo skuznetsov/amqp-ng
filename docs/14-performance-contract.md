@@ -261,6 +261,11 @@ replacement for `spec/perf/`: it does not create a benchmark window,
 control warm-up, fingerprint the host, or compare against a checked-in
 baseline by itself.
 
+The same artifact separates ordinary `Amqp::Message` async confirms
+from direct `Bytes` async confirms via `confirm_async` and
+`confirm_async_bytes`, so wrapper-allocation changes remain measurable
+without changing the normative `PERF-3` target.
+
 Saved benchmark artifacts include a small stable metadata block:
 benchmark schema version, per-lane units, Crystal version/description,
 and compile flags for `--release`, `preview_mt`, and `execution_context`.
