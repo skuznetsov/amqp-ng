@@ -464,10 +464,11 @@ and `spec/channel_spec.cr`.
 Additional gates used for this branch:
 
 ```sh
-crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr tools/perf_recommendations.cr tools/perf_recommend.cr tools/perf_compare_report.cr tools/perf_compare.cr
+crystal tool format --check src spec tools/perf_publish.cr tools/capture_proxy.cr tools/perf_smoke_assert.cr tools/perf_smoke_assertions.cr tools/perf_thresholds.cr tools/perf_threshold_assert.cr tools/perf_recommendations.cr tools/perf_recommend.cr tools/perf_compare_report.cr tools/perf_compare.cr
 crystal build tools/perf_publish.cr --no-codegen --error-trace
 crystal build tools/capture_proxy.cr --no-codegen --error-trace
 crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace
+crystal build tools/perf_smoke_assertions.cr --no-codegen --error-trace
 crystal build tools/perf_threshold_assert.cr --no-codegen --error-trace
 crystal build tools/perf_recommend.cr --no-codegen --error-trace
 crystal build tools/perf_compare.cr --no-codegen --error-trace

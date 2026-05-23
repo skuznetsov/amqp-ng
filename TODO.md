@@ -566,7 +566,7 @@ Status: active working ledger for `amqp-ng`.
   - Cutline: thresholded performance gates remain future work.
 - [x] Add positive-lane validation to the manual perf-smoke workflow.
   - Problem: the manual perf-smoke workflow executed `tools/perf_publish.cr`, but it would still upload malformed or partially missing benchmark output if the process emitted structurally valid but incomplete JSON.
-  - Progress: added `tools/perf_smoke_assert.cr`. It parses the JSON artifact, requires the `amqp-ng publish microbench` tool marker, non-empty `metrics` and `stages`, required lanes such as `publish_single`, `confirm_sync`, and `encode_empty_publish_frames`, and positive sample/median floors.
+  - Progress: added `tools/perf_smoke_assert.cr`. It parses the JSON artifact, requires the `amqp-ng publish microbench` tool marker, non-empty `metrics` and `stages`, required lanes such as `publish_single`, `confirm_sync`, `confirm_async`, `confirm_async_bytes`, and `encode_empty_publish_frames`, and positive sample/median floors.
   - Evidence: malformed JSON and missing required lanes fail locally.
   - Evidence: local RabbitMQ 3.13.7 low-count perf smoke plus assertion exits 0.
   - Evidence: local LavinMQ 2.4.0 low-count perf smoke plus assertion exits 0.
@@ -720,3 +720,12 @@ Status: active working ledger for `amqp-ng`.
   - Evidence: `/opt/homebrew/bin/crystal build tools/perf_publish.cr --release --no-codegen --error-trace` exits 0.
   - Evidence: `/opt/homebrew/bin/crystal tool format --check tools/perf_publish.cr` exits 0.
   - Cutline: no live broker was reachable during this slice, so the new lanes are compile-verified but not live-emitted here.
+- [x] Require async confirm lanes in perf-smoke JSON validation.
+  - Frame: `Window` = benchmark emits async confirm lanes but the perf-smoke validator still allowed artifacts without them; `Transport` = saved JSON artifact -> required-lane validator -> CI failure; `Potential` = `(silent_lane_loss, schema_regression_uncertainty, manual_artifact_review_work)`.
+  - Progress: extracted `AmqpPerfSmokeAssert` into `tools/perf_smoke_assertions.cr`, kept `tools/perf_smoke_assert.cr` as the CLI, and made `confirm_async` / `confirm_async_bytes` default required metrics while preserving `AMQP_BENCH_REQUIRED_METRICS` override.
+  - Evidence: `/opt/homebrew/bin/crystal spec spec/perf_smoke_assertions_spec.cr --error-trace` exits 0: 3 examples, 0 failures, 0 errors, 0 pending.
+  - Evidence: `/opt/homebrew/bin/crystal build tools/perf_smoke_assert.cr --no-codegen --error-trace` exits 0.
+  - Evidence: `/opt/homebrew/bin/crystal tool format --check tools/perf_smoke_assert.cr tools/perf_smoke_assertions.cr spec/perf_smoke_assertions_spec.cr` exits 0.
+  - Evidence: stdin CLI smoke for a minimal artifact containing `publish_single`, `confirm_sync`, `confirm_async`, `confirm_async_bytes`, and `encode_empty_publish_frames` exits 0 and reports `4 metrics, 1 stages`.
+  - Evidence: full `/opt/homebrew/bin/crystal spec --error-trace` exits 0: 268 examples, 0 failures, 0 errors, 104 pending.
+  - Cutline: this validates artifact shape only; it still does not impose host-specific throughput thresholds.
